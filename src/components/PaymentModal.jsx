@@ -30,6 +30,7 @@ export default function PaymentModal({ isOpen, onClose }) {
   const [paymentRef, setPaymentRef] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
 
   if (!isOpen) return null;
 
@@ -37,6 +38,13 @@ export default function PaymentModal({ isOpen, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrorMessage(null);
+
+    if (!currentUser || !currentUser.email) {
+      alert("Debes iniciar sesión con tu cuenta antes de procesar el pago.");
+      return;
+    }
+
     if (deliveryMethod === "delivery" && !district) {
       alert("Por favor selecciona un distrito para el envío.");
       return;
@@ -51,24 +59,50 @@ export default function PaymentModal({ isOpen, onClose }) {
     }
 
     setLoading(true);
+
     try {
-      const estimatedCost = cart.reduce(
-        (acc, it) => acc + (Number(it.cost) || it.price * 0.7) * it.quantity,
+      // 1. Sanitizar ítems para que Firestore NUNCA reciba undefined ni referencias raras
+      const cleanItems = (cart || []).map((it) => ({
+        id: String(it.id || ""),
+        name: String(it.name || "Producto"),
+        price: Number(it.price) || 0,
+        quantity: Number(it.quantity) || 1,
+        imageUrl: String(it.imageUrl || (it.images && it.images[0]) || "/papel.jpeg")
+      }));
+
+      // 2. Costo estimado seguro
+      const safeEstimatedCost = (cart || []).reduce(
+        (acc, it) => acc + (Number(it.cost) || Number(it.price || 0) * 0.7) * (Number(it.quantity) || 1),
         0
       );
 
+      const safeTotalAmount = Number(totalAmount) || 0;
+      const safeNetProfit = safeTotalAmount - safeEstimatedCost;
+
+      // 3. Normalizar correo para cumplir estrictamente con firestore.rules
+      const clientEmail = currentUser.email.trim().toLowerCase();
+      const clientName = (currentUser.displayName || clientEmail.split("@")[0] || "Cliente").trim();
+
+      const finalDistrict = deliveryMethod === "pickup" 
+        ? "MegaPlaza Independencia (Recojo)" 
+        : district.trim();
+
+      const finalAddress = deliveryMethod === "pickup" 
+        ? "Punto Oficial: MegaPlaza Independencia" 
+        : address.trim();
+
       await addDoc(collection(db, "orders"), {
-        userId: currentUser?.uid || "invitado",
-        clientName: currentUser?.displayName || "Cliente",
-        clientEmail: currentUser?.email || "sin_correo@ejemplo.com",
+        userId: currentUser.uid,
+        clientName,
+        clientEmail,
         deliveryMethod,
-        district: deliveryMethod === "pickup" ? "MegaPlaza Independencia (Recojo)" : district,
-        address: deliveryMethod === "pickup" ? "Punto de Entrega: MegaPlaza Independencia" : address,
-        items: cart,
-        totalItemsCount: cart.reduce((acc, it) => acc + it.quantity, 0),
-        totalAmount,
-        estimatedCost,
-        netProfit: totalAmount - estimatedCost,
+        district: finalDistrict,
+        address: finalAddress,
+        items: cleanItems,
+        totalItemsCount: cleanItems.reduce((acc, it) => acc + it.quantity, 0),
+        totalAmount: Number(safeTotalAmount.toFixed(2)),
+        estimatedCost: Number(safeEstimatedCost.toFixed(2)),
+        netProfit: Number(safeNetProfit.toFixed(2)),
         paymentMethod: "YAPE/PLIN",
         paymentRef: paymentRef.trim(),
         status: "Pendiente",
@@ -78,8 +112,8 @@ export default function PaymentModal({ isOpen, onClose }) {
       setSuccess(true);
       clearCart();
     } catch (err) {
-      console.error(err);
-      alert("Error al procesar el pedido.");
+      console.error("Fallo detallado al guardar en Firestore:", err);
+      setErrorMessage(err.message || "Error al procesar el pedido.");
     } finally {
       setLoading(false);
     }
@@ -102,9 +136,13 @@ export default function PaymentModal({ isOpen, onClose }) {
               ¡Pedido Registrado con Éxito!
             </h3>
             <p style={{ fontSize: "14px", color: "#64748B", lineHeight: "1.6", marginBottom: "24px" }}>
-              Hemos validado tu solicitud a nombre de <b>Mecatrónica Pearc S.A.C.</b> Nos comunicaremos al número asignado para despachar o coordinar el recojo.
+              Hemos validado tu solicitud en <b>Distribuidora DIEGO</b>. Puedes hacer seguimiento del despacho en tiempo real desde <b>"Mis Pedidos"</b>.
             </p>
-            <button onClick={() => { setSuccess(false); onClose(); }} className="btn-primary" style={{ margin: "0 auto", padding: "12px 32px" }}>
+            <button 
+              onClick={() => { setSuccess(false); onClose(); }} 
+              className="btn-primary" 
+              style={{ margin: "0 auto", padding: "12px 32px" }}
+            >
               Aceptar y Continuar
             </button>
           </div>
@@ -114,6 +152,12 @@ export default function PaymentModal({ isOpen, onClose }) {
               <h3 style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>Finalizar Compra</h3>
               <p style={{ fontSize: "13px", color: "#64748B" }}>Elige tu método de entrega y confirma tu abono</p>
             </div>
+
+            {errorMessage && (
+              <div style={{ background: "#FEF2F2", border: "1px solid #F87171", borderRadius: "12px", padding: "12px", marginBottom: "16px", color: "#991B1B", fontSize: "12px" }}>
+                <strong>Error al registrar orden:</strong> {errorMessage}
+              </div>
+            )}
 
             {/* Selector de Modalidad */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" }}>
@@ -171,15 +215,12 @@ export default function PaymentModal({ isOpen, onClose }) {
                 </span>
               </div>
               <p style={{ fontSize: "12px", color: "#1E293B", margin: "8px 0 4px" }}>
-                <b>Titular:</b> Mecatrónica Pearc S.A.C.
+                <b>Titular Oficial:</b> Distribuidora DIEGO
               </p>
               <img
-                src="/assets/qr-pago.png"
+                src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=YAPE_PLIN_926689484"
                 alt="QR Pago"
                 className="qr-img"
-                onError={(e) => {
-                  e.target.src = "https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=YAPE-PLIN-926689484-MecatronicaPearcSAC";
-                }}
               />
               <div style={{ fontSize: "11px", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
                 <QrCode size={14} /> Escanea con tu app para pagar al instante
@@ -255,7 +296,7 @@ export default function PaymentModal({ isOpen, onClose }) {
               <input
                 required
                 type="text"
-                placeholder="Código que figura en tu comprobante"
+                placeholder="Código que figura en tu comprobante (ej. 99999)"
                 value={paymentRef}
                 onChange={(e) => setPaymentRef(e.target.value)}
                 className="form-input"
@@ -264,7 +305,7 @@ export default function PaymentModal({ isOpen, onClose }) {
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "2px solid #F1F5F9", paddingTop: "14px", marginBottom: "16px" }}>
               <span style={{ fontSize: "14px", fontWeight: 800, color: "#64748B" }}>Total a Pagar:</span>
-              <span style={{ fontSize: "24px", fontWeight: 900, color: "#0284C7" }}>S/ {totalAmount.toFixed(2)}</span>
+              <span style={{ fontSize: "24px", fontWeight: 900, color: "#0284C7" }}>S/ {Number(totalAmount).toFixed(2)}</span>
             </div>
 
             <button
