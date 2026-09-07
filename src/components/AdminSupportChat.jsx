@@ -3,7 +3,6 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "fireb
 import { db } from "../firebase/config";
 import * as XLSX from "xlsx";
 import { playNotificationChime, triggerBrowserNotification } from "../utils/notificationSound";
-import AdminSupportChat from "../components/AdminSupportChat";
 import {
   DollarSign,
   TrendingUp,
@@ -17,7 +16,6 @@ import {
   Eye,
   Images,
   User,
-  ShoppingBag,
   CreditCard,
   MapPin
 } from "lucide-react";
@@ -26,7 +24,7 @@ export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
 
-  // Formulario Producto multi-imagen
+  // Formulario Producto con soporte multi-imagen
   const [productForm, setProductForm] = useState({
     name: "",
     category: "Papel Higiénico",
@@ -40,19 +38,44 @@ export default function AdminDashboard() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Escucha reactiva segura sin mutaciones ni bucles
   useEffect(() => {
-    const unsubOrders = onSnapshot(collection(db, "orders"), (snap) => {
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      // Ordenar por fecha más reciente
-      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-      setOrders(items);
-    });
+    let isMounted = true;
 
-    const unsubProducts = onSnapshot(collection(db, "products"), (snap) => {
-      setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+    const unsubOrders = onSnapshot(
+      collection(db, "orders"),
+      (snap) => {
+        if (!isMounted) return;
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+        // Orden inmutable seguro comprobando si createdAt es Timestamp o ISO String
+        const sorted = [...items].sort((a, b) => {
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+          return dateB - dateA;
+        });
+
+        setOrders(sorted);
+      },
+      (err) => {
+        console.error("Error al escuchar órdenes:", err);
+      }
+    );
+
+    const unsubProducts = onSnapshot(
+      collection(db, "products"),
+      (snap) => {
+        if (!isMounted) return;
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setProducts(items);
+      },
+      (err) => {
+        console.error("Error al escuchar productos:", err);
+      }
+    );
 
     return () => {
+      isMounted = false;
       unsubOrders();
       unsubProducts();
     };
@@ -70,7 +93,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // Eliminación de pedido por el Administrador
+  // Eliminación de pedido por Administración
   const handleDeleteOrder = async (orderId) => {
     if (window.confirm(`¿Estás seguro de eliminar permanentemente la orden #${orderId.slice(0, 8)}?`)) {
       try {
@@ -82,7 +105,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // Subida múltiple de fotos
+  // Subida múltiple de fotos en base64
   const handleMultipleImageUpload = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -111,7 +134,7 @@ export default function AdminDashboard() {
     }));
   };
 
-  // Métricas financieras
+  // Métricas financieras calculadas
   const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
   const totalCost = orders.reduce((sum, o) => sum + (Number(o.estimatedCost) || 0), 0);
   const netProfit = totalRevenue - totalCost;
@@ -120,7 +143,7 @@ export default function AdminDashboard() {
   const exportAccountingToExcel = () => {
     const dataForExcel = orders.map((o) => ({
       "ID Pedido": o.id,
-      "Fecha": o.createdAt ? new Date(o.createdAt).toLocaleString() : "S/F",
+      "Fecha": o.createdAt ? (o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString() : new Date(o.createdAt).toLocaleString()) : "S/F",
       "Cliente": o.clientName || "Sin registrar",
       "Email": o.clientEmail || "Anónimo",
       "Modalidad / Distrito": o.district || "No especificado",
@@ -187,7 +210,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Helper de colores para los estados
   const getStatusBadgeStyle = (status) => {
     switch (status) {
       case "Verificado":
@@ -323,7 +345,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* TABLA PRINCIPAL DE VENTAS Y CONTROL DE ESTADOS */}
+      {/* TABLA PRINCIPAL DE VENTAS */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", marginBottom: "40px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
           <div>
@@ -381,17 +403,15 @@ export default function AdminDashboard() {
 
                   return (
                     <tr key={o.id} style={{ borderBottom: "1px solid #F1F5F9", verticalAlign: "top" }}>
-                      {/* ID y Fecha */}
                       <td style={{ padding: "16px" }}>
                         <span style={{ fontFamily: "monospace", fontWeight: 800, color: "#0284C7", display: "block" }}>
                           #{o.id.slice(0, 8).toUpperCase()}
                         </span>
                         <span style={{ fontSize: "11px", color: "#94A3B8" }}>
-                          {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "S/F"}
+                          {o.createdAt ? (o.createdAt?.toDate ? o.createdAt.toDate().toLocaleDateString() : new Date(o.createdAt).toLocaleDateString()) : "S/F"}
                         </span>
                       </td>
 
-                      {/* Cliente */}
                       <td style={{ padding: "16px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, color: "#0F172A" }}>
                           <User size={14} color="#64748B" />
@@ -402,7 +422,6 @@ export default function AdminDashboard() {
                         </div>
                       </td>
 
-                      {/* Productos Adquiridos (Chips limpios) */}
                       <td style={{ padding: "16px", maxWidth: "280px" }}>
                         {itemsList.length > 0 ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -434,12 +453,10 @@ export default function AdminDashboard() {
                         )}
                       </td>
 
-                      {/* Cantidad Total */}
                       <td style={{ padding: "16px", textAlign: "center", fontWeight: 800, color: "#0F172A" }}>
                         {o.totalItemsCount || itemsList.reduce((acc, i) => acc + (i.quantity || 1), 0) || 1}
                       </td>
 
-                      {/* Total */}
                       <td style={{ padding: "16px" }}>
                         <div style={{ fontSize: "15px", fontWeight: 900, color: "#0F172A" }}>
                           S/ {Number(o.totalAmount || 0).toFixed(2)}
@@ -451,7 +468,6 @@ export default function AdminDashboard() {
                         )}
                       </td>
 
-                      {/* Operación y Entrega */}
                       <td style={{ padding: "16px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 800, color: "#0284C7" }}>
                           <CreditCard size={14} /> Ref: {o.paymentRef || "N/A"}
@@ -461,7 +477,7 @@ export default function AdminDashboard() {
                         </div>
                       </td>
 
-                      {/* SELECTOR DESPLEGABLE DINÁMICO */}
+                      {/* Selector de Estado */}
                       <td style={{ padding: "16px" }}>
                         <select
                           value={o.status || "Pendiente"}
@@ -487,7 +503,6 @@ export default function AdminDashboard() {
                         </select>
                       </td>
 
-                      {/* Botón Eliminar de Administración */}
                       <td style={{ padding: "16px", textAlign: "center" }}>
                         <button
                           onClick={() => handleDeleteOrder(o.id)}
@@ -497,8 +512,7 @@ export default function AdminDashboard() {
                             color: "#DC2626",
                             padding: "8px",
                             borderRadius: "10px",
-                            cursor: "pointer",
-                            transition: "transform 0.15s ease"
+                            cursor: "pointer"
                           }}
                           title="Eliminar registro de pedido"
                         >
@@ -514,16 +528,10 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* Centro de Mensajería */}
-      <h2 style={{ fontSize: "20px", fontWeight: 900, marginBottom: "16px", color: "#0F172A" }}>
-        Atención y Soporte al Cliente
-      </h2>
-      <AdminSupportChat />
-
       {/* Formulario Agregar Producto */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", margin: "40px 0" }}>
         <h2 style={{ fontSize: "20px", fontWeight: 900, marginBottom: "18px", display: "flex", alignItems: "center", gap: "10px", color: "#0F172A" }}>
-          <PlusCircle size={22} color="#0284C7" /> Publicar Producto al Catálogo
+          <PlusCircle size={22} color="#0284C7" /> Publicar Producto en el Catálogo
         </h2>
 
         <form onSubmit={handleSaveProduct} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "18px" }}>
@@ -611,7 +619,6 @@ export default function AdminDashboard() {
             </label>
           </div>
 
-          {/* Miniaturas */}
           {productForm.images.length > 0 && (
             <div style={{ gridColumn: "1 / -1", padding: "16px", background: "#F8FAFC", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
               <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -697,3 +704,8 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+
+
+
+
