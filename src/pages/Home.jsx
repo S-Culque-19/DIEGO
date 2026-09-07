@@ -27,7 +27,7 @@ export default function Home({ isCartOpen, setIsCartOpen, onRequireAuth }) {
   const [category, setCategory] = useState("all");
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
-  // Estados para imagen activa por producto y lightbox ampliado
+  // Estados para imagen activa por producto y visor ampliado
   const [activeImageMap, setActiveImageMap] = useState({});
   const [lightboxImage, setLightboxImage] = useState(null);
 
@@ -76,7 +76,7 @@ export default function Home({ isCartOpen, setIsCartOpen, onRequireAuth }) {
 
   return (
     <div style={{ minHeight: "100vh" }}>
-      {/* Lightbox / Modal para imagen ampliada */}
+      {/* Lightbox para imagen grande */}
       {lightboxImage && (
         <div
           onClick={() => setLightboxImage(null)}
@@ -148,7 +148,7 @@ export default function Home({ isCartOpen, setIsCartOpen, onRequireAuth }) {
         </div>
       </div>
 
-      {/* Hero Comercial */}
+      {/* Hero Comercial con tu imagen local */}
       <div className="hero-wrapper">
         <div className="hero-card">
           <div>
@@ -160,7 +160,7 @@ export default function Home({ isCartOpen, setIsCartOpen, onRequireAuth }) {
               Distribuidora <span>DIEGO</span>: Papel Higiénico & Toalla
             </h1>
             <p className="hero-desc">
-              Celulosa virgen de alta absorción y textura acolchada. Delivery sin costo para Comas, Independencia, San Martín de Porres y Los Olivos.
+              Hojas dobles de máxima absorción, rendimiento y suavidad garantizada. Delivery sin costo para Comas, Independencia, San Martín de Porres y Los Olivos.
             </p>
             <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
               <a href="#catalogo" className="btn-primary" style={{ padding: "14px 28px", fontSize: "14px" }}>
@@ -171,14 +171,15 @@ export default function Home({ isCartOpen, setIsCartOpen, onRequireAuth }) {
 
           <div className="hero-image-box">
             <img 
-              src="https://images.unsplash.com/photo-1584556812952-905ffd0c611a?auto=format&fit=crop&w=800&q=80" 
+              src="/papel.jpeg" 
               alt="Distribuidora DIEGO" 
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
           </div>
         </div>
       </div>
 
-      {/* Barra de Confianza */}
+      {/* Barra de Beneficios */}
       <div className="trust-bar">
         <div className="trust-card">
           <div className="trust-icon"><Truck size={24} /></div>
@@ -197,15 +198,15 @@ export default function Home({ isCartOpen, setIsCartOpen, onRequireAuth }) {
         <div className="trust-card">
           <div className="trust-icon"><Award size={24} /></div>
           <div>
-            <div className="trust-title">100% Celulosa Pura</div>
-            <div className="trust-sub">Suavidad y resistencia certificada</div>
+            <div className="trust-title">Doble Hoja Acolchada</div>
+            <div className="trust-sub">Suavidad y resistencia comprobada</div>
           </div>
         </div>
         <div className="trust-card">
           <div className="trust-icon"><CheckCircle size={24} /></div>
           <div>
-            <div className="trust-title">Precios de Fábrica</div>
-            <div className="trust-sub">Venta minorista y fardos por mayor</div>
+            <div className="trust-title">Precios de Distribuidor</div>
+            <div className="trust-sub">Venta minorista y planchas por mayor</div>
           </div>
         </div>
       </div>
@@ -264,7 +265,6 @@ export default function Home({ isCartOpen, setIsCartOpen, onRequireAuth }) {
               return (
                 <div key={p.id} className="product-card">
                   <div>
-                    {/* Caja de Imagen Principal con botón para ampliar */}
                     <div
                       className="card-image-box"
                       style={{ cursor: "pointer", position: "relative" }}
@@ -290,7 +290,6 @@ export default function Home({ isCartOpen, setIsCartOpen, onRequireAuth }) {
                       </div>
                     </div>
 
-                    {/* Selector de fotos secundarias si el producto tiene más de 1 */}
                     {productImages.length > 1 && (
                       <div style={{ display: "flex", gap: "6px", padding: "8px 0", overflowX: "auto" }}>
                         {productImages.map((thumb, idx) => (
