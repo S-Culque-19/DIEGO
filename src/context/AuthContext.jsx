@@ -1,116 +1,120 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import {
-  createUserWithEmailAndPassword,
+  onAuthStateChanged,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  setPersistence,
+  browserLocalPersistence,
+  updateProfile
 } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase/config";
 
 const AuthContext = createContext();
-
 export const useAuth = () => useContext(AuthContext);
+
+const ADMIN_EMAIL = "vq2403@diego.org.com";
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
-  const [role, setRole] = useState(null);
+  const [userRole, setUserRole] = useState(null); // 'admin' | 'client' | null
   const [loading, setLoading] = useState(true);
 
-  const ADMIN_EMAIL = "vq2403@diego.org.com";
-
-  // Registro de usuarios
-  const register = async (name, email, password) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-    const user = userCredential.user;
-
-    const assignedRole = cleanEmail === ADMIN_EMAIL ? "admin" : "client";
-    setRole(assignedRole);
-    setCurrentUser(user);
-
-    // Escritura en Firestore en segundo plano (no bloquea el acceso)
-    setDoc(doc(db, "users", user.uid), {
-      uid: user.uid,
-      name,
-      email: cleanEmail,
-      role: assignedRole,
-      createdAt: new Date().toISOString()
-    }).catch((err) => {
-      console.warn("Aviso: Documento de usuario en Firestore no sincronizado aún:", err.message);
+  // 1. Activar persistencia local obligatoria multidispositivo
+  useEffect(() => {
+    setPersistence(auth, browserLocalPersistence).catch((err) => {
+      console.error("Error configurando persistencia de Firebase:", err);
     });
+  }, []);
 
-    return user;
-  };
-
-  // Login con propagación de error nativo
-  const login = async (email, password) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
-    const user = userCredential.user;
-
-    // Asignación de rol instantánea en memoria para el Administrador
-    if (user.email?.toLowerCase() === ADMIN_EMAIL) {
-      setRole("admin");
-    }
-    setCurrentUser(user);
-    return user;
-  };
-
-  // Logout
-  const logout = async () => {
-    await signOut(auth);
-    setCurrentUser(null);
-    setRole(null);
-  };
-
-  // Observador de estado de autenticación
+  // 2. Listener central de sesión
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        setCurrentUser(user);
-        const userEmail = user.email?.toLowerCase();
+        const isAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+        const detectedRole = isAdmin ? "admin" : "client";
 
-        // 1. Bypass directo si es la cuenta administradora
-        if (userEmail === ADMIN_EMAIL) {
-          setRole("admin");
-          setLoading(false);
-          return;
-        }
-
-        // 2. Consulta no bloqueante de rol para clientes regulares
         try {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          if (userDoc.exists()) {
-            setRole(userDoc.data().role || "client");
-          } else {
-            setRole("client");
+          const userRef = doc(db, "users", user.uid);
+          const snap = await getDoc(userRef);
+
+          if (!snap.exists()) {
+            await setDoc(userRef, {
+              uid: user.uid,
+              email: user.email.toLowerCase(),
+              displayName: user.displayName || user.email.split("@")[0],
+              role: detectedRole,
+              createdAt: new Date().toISOString()
+            });
           }
-        } catch {
-          setRole("client");
+        } catch (error) {
+          console.warn("No se pudo escribir registro de usuario en Firestore:", error);
         }
+
+        setCurrentUser(user);
+        setUserRole(detectedRole);
       } else {
         setCurrentUser(null);
-        setRole(null);
+        setUserRole(null);
       }
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => unsubscribe();
   }, []);
 
-  const value = {
-    currentUser,
-    role,
-    isAdmin: role === "admin" || currentUser?.email?.toLowerCase() === ADMIN_EMAIL,
-    register,
-    login,
-    logout,
-    loading
+  // Iniciar sesión
+  const login = async (email, password) => {
+    await setPersistence(auth, browserLocalPersistence);
+    return signInWithEmailAndPassword(auth, email.trim(), password);
+  };
+
+  // Registrarse con sincronización de nombre y perfil
+  const signup = async (email, password, name) => {
+    await setPersistence(auth, browserLocalPersistence);
+    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    
+    if (name) {
+      await updateProfile(cred.user, { displayName: name.trim() });
+    }
+
+    const isAdmin = cred.user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const role = isAdmin ? "admin" : "client";
+
+    await setDoc(doc(db, "users", cred.user.uid), {
+      uid: cred.user.uid,
+      email: cred.user.email.toLowerCase(),
+      displayName: name?.trim() || cred.user.email.split("@")[0],
+      role,
+      createdAt: new Date().toISOString()
+    });
+
+    return cred;
+  };
+
+  // Logout seguro que vacía datos locales
+  const logout = async () => {
+    localStorage.removeItem("diego_cart");
+    localStorage.removeItem("diego_last_session");
+    setCurrentUser(null);
+    setUserRole(null);
+    await signOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        userRole,
+        isAdmin: userRole === "admin",
+        isClient: userRole === "client",
+        login,
+        signup,
+        logout,
+        loading
+      }}
+    >
       {!loading && children}
     </AuthContext.Provider>
   );

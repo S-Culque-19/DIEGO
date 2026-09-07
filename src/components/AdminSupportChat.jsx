@@ -1,5 +1,12 @@
-import React, { useState, useEffect } from "react";
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import React, { useState, useEffect, useRef } from "react";
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  updateDoc 
+} from "firebase/firestore";
 import { db } from "../firebase/config";
 import * as XLSX from "xlsx";
 import { playNotificationChime, triggerBrowserNotification } from "../utils/notificationSound";
@@ -17,12 +24,23 @@ import {
   Images,
   User,
   CreditCard,
-  MapPin
+  MapPin,
+  MessageSquare,
+  Send,
+  ShieldCheck,
+  Bot
 } from "lucide-react";
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
+
+  // Estados del Centro de Mensajería Tipo Messenger
+  const [conversations, setConversations] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [replyText, setReplyText] = useState("");
+  const chatScrollRef = useRef(null);
 
   // Formulario Producto con soporte multi-imagen
   const [productForm, setProductForm] = useState({
@@ -38,7 +56,7 @@ export default function AdminDashboard() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Escucha reactiva segura sin mutaciones ni bucles
+  // 1. Escucha de Órdenes y Productos (Sin bucles de render)
   useEffect(() => {
     let isMounted = true;
 
@@ -48,7 +66,6 @@ export default function AdminDashboard() {
         if (!isMounted) return;
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // Orden inmutable seguro comprobando si createdAt es Timestamp o ISO String
         const sorted = [...items].sort((a, b) => {
           const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
           const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
@@ -57,9 +74,7 @@ export default function AdminDashboard() {
 
         setOrders(sorted);
       },
-      (err) => {
-        console.error("Error al escuchar órdenes:", err);
-      }
+      (err) => console.error("Error al escuchar órdenes:", err)
     );
 
     const unsubProducts = onSnapshot(
@@ -69,9 +84,7 @@ export default function AdminDashboard() {
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setProducts(items);
       },
-      (err) => {
-        console.error("Error al escuchar productos:", err);
-      }
+      (err) => console.error("Error al escuchar productos:", err)
     );
 
     return () => {
@@ -80,6 +93,77 @@ export default function AdminDashboard() {
       unsubProducts();
     };
   }, []);
+
+  // 2. Escucha de Bandeja de Chats de Clientes (Messenger)
+  useEffect(() => {
+    const unsubChats = onSnapshot(
+      collection(db, "chats"),
+      (snap) => {
+        const convList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        convList.sort((a, b) => new Date(b.lastUpdated || 0) - new Date(a.lastUpdated || 0));
+        setConversations(convList);
+
+        // Seleccionar la primera conversación automáticamente si no hay ninguna activa
+        setSelectedUser((prev) => prev || (convList.length > 0 ? convList[0] : null));
+      },
+      (err) => console.error("Error al escuchar lista de chats:", err)
+    );
+
+    return () => unsubChats();
+  }, []);
+
+  // 3. Escucha de mensajes del cliente seleccionado
+  useEffect(() => {
+    if (!selectedUser?.id) {
+      setMessages([]);
+      return;
+    }
+
+    const unsubMessages = onSnapshot(
+      collection(db, `chats/${selectedUser.id}/messages`),
+      (snap) => {
+        const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        msgs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+        setMessages(msgs);
+      },
+      (err) => console.error("Error al cargar mensajes del cliente:", err)
+    );
+
+    // Marcar como leído en Firestore
+    updateDoc(doc(db, "chats", selectedUser.id), { unreadByAdmin: false }).catch(() => {});
+
+    return () => unsubMessages();
+  }, [selectedUser?.id]);
+
+  useEffect(() => {
+    chatScrollRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Responder al cliente seleccionado
+  const handleSendAdminReply = async (e) => {
+    e.preventDefault();
+    if (!replyText.trim() || !selectedUser) return;
+
+    const text = replyText.trim();
+    setReplyText("");
+
+    try {
+      await addDoc(collection(db, `chats/${selectedUser.id}/messages`), {
+        sender: "admin",
+        text,
+        createdAt: new Date().toISOString()
+      });
+
+      await updateDoc(doc(db, "chats", selectedUser.id), {
+        lastMessage: `Admin: ${text}`,
+        lastUpdated: new Date().toISOString(),
+        unreadByAdmin: false
+      });
+    } catch (err) {
+      console.error("Error al enviar mensaje:", err);
+      alert("No se pudo enviar la respuesta: " + err.message);
+    }
+  };
 
   // Actualización inmediata del estado en Firestore
   const handleStatusChange = async (orderId, newStatus) => {
@@ -105,7 +189,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // Subida múltiple de fotos en base64
+  // Subida múltiple de fotos
   const handleMultipleImageUpload = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -276,7 +360,7 @@ export default function AdminDashboard() {
             Panel de Operaciones & Despacho
           </h1>
           <p style={{ fontSize: "14px", color: "#64748B", marginTop: "4px" }}>
-            Auditoría de compras, actualización de estados y gestión de inventario en tiempo real.
+            Auditoría de compras, actualización de estados, mensajería y gestión de inventario.
           </p>
         </div>
         <button
@@ -345,7 +429,163 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* TABLA PRINCIPAL DE VENTAS */}
+      {/* BANDEJA TIPO MESSENGER INTEGRADA EN EL DASHBOARD */}
+      <div style={{ marginBottom: "40px" }}>
+        <div style={{ marginBottom: "16px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+            <MessageSquare size={22} color="#0284C7" />
+            <span>Centro de Mensajería & Atención al Cliente</span>
+          </h2>
+          <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
+            Bandeja multicanal en vivo. Responde directamente a las consultas de los clientes autenticados.
+          </p>
+        </div>
+
+        <div style={{
+          background: "#FFF",
+          borderRadius: "24px",
+          border: "1px solid #E2E8F0",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.03)",
+          overflow: "hidden",
+          display: "grid",
+          gridTemplateColumns: "320px 1fr",
+          height: "560px"
+        }}>
+          {/* Columna Izquierda: Clientes */}
+          <div style={{ borderRight: "1px solid #E2E8F0", display: "flex", flexDirection: "column", background: "#F8FAFC" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #E2E8F0", background: "#FFF", fontWeight: 800, fontSize: "13px", color: "#475569" }}>
+              CONVERSACIONES ACTIVAS ({conversations.length})
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              {conversations.length === 0 ? (
+                <div style={{ padding: "40px 20px", textAlign: "center", color: "#94A3B8", fontSize: "13px" }}>
+                  Aún no hay mensajes de clientes.
+                </div>
+              ) : (
+                conversations.map((c) => {
+                  const isSelected = selectedUser?.id === c.id;
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => setSelectedUser(c)}
+                      style={{
+                        padding: "14px 18px",
+                        borderBottom: "1px solid #F1F5F9",
+                        cursor: "pointer",
+                        backgroundColor: isSelected ? "#E0F2FE" : "#FFF",
+                        transition: "all 0.15s ease"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontWeight: 800, fontSize: "13px", color: isSelected ? "#0369A1" : "#0F172A" }}>
+                          {c.userName || "Cliente"}
+                        </span>
+                        {c.unreadByAdmin && (
+                          <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#EF4444" }} />
+                        )}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
+                        {c.userEmail}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#475569", marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {c.lastMessage || "Sin mensajes"}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Columna Derecha: Sala de Chat Activa */}
+          <div style={{ display: "flex", flexDirection: "column", background: "#FFF" }}>
+            {selectedUser ? (
+              <>
+                <div style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F8FAFC" }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: "15px", fontWeight: 900, color: "#0F172A" }}>{selectedUser.userName}</h4>
+                    <span style={{ fontSize: "12px", color: "#64748B" }}>{selectedUser.userEmail}</span>
+                  </div>
+                  <span style={{ fontSize: "11px", background: "#DCFCE7", color: "#16A34A", padding: "4px 10px", borderRadius: "8px", fontWeight: 800 }}>
+                    Canal Conectado
+                  </span>
+                </div>
+
+                <div style={{ flex: 1, padding: "20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", background: "#FAFAFA" }}>
+                  {messages.length === 0 ? (
+                    <div style={{ textAlign: "center", color: "#94A3B8", fontSize: "13px", margin: "auto" }}>
+                      No hay mensajes en este chat.
+                    </div>
+                  ) : (
+                    messages.map((m) => {
+                      const isAdminMsg = m.sender === "admin";
+                      const isBot = m.sender === "assistant";
+
+                      return (
+                        <div
+                          key={m.id}
+                          style={{
+                            alignSelf: isAdminMsg ? "flex-end" : "flex-start",
+                            maxWidth: "75%",
+                            background: isAdminMsg ? "#0284C7" : isBot ? "#E2E8F0" : "#FFF",
+                            color: isAdminMsg ? "#FFF" : "#0F172A",
+                            padding: "10px 16px",
+                            borderRadius: isAdminMsg ? "16px 16px 2px 16px" : "16px 16px 16px 2px",
+                            fontSize: "13px",
+                            boxShadow: "0 2px 6px rgba(0,0,0,0.04)",
+                            border: isAdminMsg ? "none" : "1px solid #E2E8F0"
+                          }}
+                        >
+                          <div style={{ fontSize: "10px", fontWeight: 800, opacity: 0.7, marginBottom: "2px" }}>
+                            {isAdminMsg ? "Tú (Administrador)" : isBot ? "Bot Automático" : selectedUser.userName}
+                          </div>
+                          {m.text}
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatScrollRef} />
+                </div>
+
+                <form onSubmit={handleSendAdminReply} style={{ padding: "16px", borderTop: "1px solid #E2E8F0", display: "flex", gap: "10px" }}>
+                  <input
+                    type="text"
+                    placeholder={`Responder a ${selectedUser.userName}...`}
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    style={{ flex: 1, padding: "12px 16px", borderRadius: "14px", border: "1px solid #E2E8F0", outline: "none", fontSize: "13px" }}
+                  />
+                  <button
+                    type="submit"
+                    style={{
+                      background: "#0284C7",
+                      color: "#FFF",
+                      border: "none",
+                      padding: "0 22px",
+                      borderRadius: "14px",
+                      fontWeight: 800,
+                      fontSize: "13px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    <Send size={15} /> Responder
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8", fontSize: "14px" }}>
+                Selecciona una conversación a la izquierda para interactuar.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* TABLA PRINCIPAL DE VENTAS Y AUDITORÍA DE PEDIDOS */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", marginBottom: "40px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
           <div>
@@ -704,8 +944,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
-
-
-
-
