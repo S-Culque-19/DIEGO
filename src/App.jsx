@@ -6,6 +6,7 @@ import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
 import AdminDashboard from "./pages/AdminDashboard";
 import ChatAssistant from "./components/ChatAssistant";
+import MyOrdersModal from "./components/MyOrdersModal";
 import { AlertTriangle, X } from "lucide-react";
 
 function AuthModal({ isOpen, onClose }) {
@@ -56,7 +57,16 @@ function AuthModal({ isOpen, onClose }) {
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={onClose}
-          style={{ position: "absolute", top: "20px", right: "20px", border: "none", background: "none", cursor: "pointer", fontSize: "18px", color: "#94A3B8" }}
+          style={{
+            position: "absolute",
+            top: "20px",
+            right: "20px",
+            border: "none",
+            background: "none",
+            cursor: "pointer",
+            fontSize: "18px",
+            color: "#94A3B8"
+          }}
         >
           <X size={20} />
         </button>
@@ -66,14 +76,33 @@ function AuthModal({ isOpen, onClose }) {
             {isRegister ? "Crear Cuenta" : "Iniciar Sesión"}
           </h3>
           <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-            {isRegister ? "Regístrate para guardar y dar seguimiento a tus compras." : "Accede para gestionar la tienda o procesar pagos."}
+            {isRegister
+              ? "Regístrate para guardar y dar seguimiento a tus compras."
+              : "Accede para gestionar la tienda o procesar pagos."}
           </p>
         </div>
 
         {/* Feedback de error técnico detallado */}
         {errorDetails && (
-          <div style={{ background: "#FEF2F2", border: "1.5px solid #F87171", borderRadius: "14px", padding: "14px", marginBottom: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#B91C1C", fontWeight: 800, fontSize: "13px" }}>
+          <div
+            style={{
+              background: "#FEF2F2",
+              border: "1.5px solid #F87171",
+              borderRadius: "14px",
+              padding: "14px",
+              marginBottom: "16px"
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                color: "#B91C1C",
+                fontWeight: 800,
+                fontSize: "13px"
+              }}
+            >
               <AlertTriangle size={18} />
               <span>Código Firebase: {errorDetails.code}</span>
             </div>
@@ -128,7 +157,11 @@ function AuthModal({ isOpen, onClose }) {
             className="btn-primary"
             style={{ width: "100%", padding: "14px", marginTop: "8px" }}
           >
-            {isSubmitting ? "Verificando con Firebase..." : isRegister ? "Completar Registro" : "Ingresar a mi Cuenta"}
+            {isSubmitting
+              ? "Verificando con Firebase..."
+              : isRegister
+              ? "Completar Registro"
+              : "Ingresar a mi Cuenta"}
           </button>
         </form>
 
@@ -137,7 +170,14 @@ function AuthModal({ isOpen, onClose }) {
           <button
             type="button"
             onClick={() => handleModeSwitch(!isRegister)}
-            style={{ background: "none", border: "none", color: "#0284C7", fontWeight: 800, cursor: "pointer", textDecoration: "underline" }}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#0284C7",
+              fontWeight: 800,
+              cursor: "pointer",
+              textDecoration: "underline"
+            }}
           >
             {isRegister ? "Inicia sesión" : "Regístrate aquí"}
           </button>
@@ -159,10 +199,15 @@ function ProtectedAdminRoute({ children }) {
 function MainApp() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isOrdersOpen, setIsOrdersOpen] = useState(false);
 
   return (
     <BrowserRouter>
-      <Navbar onOpenAuth={() => setIsAuthOpen(true)} onOpenCart={() => setIsCartOpen(true)} />
+      <Navbar
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenCart={() => setIsCartOpen(true)}
+        onOpenOrders={() => setIsOrdersOpen(true)}
+      />
       <Routes>
         <Route
           path="/"
@@ -187,6 +232,7 @@ function MainApp() {
 
       <ChatAssistant />
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+      <MyOrdersModal isOpen={isOrdersOpen} onClose={() => setIsOrdersOpen(false)} />
     </BrowserRouter>
   );
 }

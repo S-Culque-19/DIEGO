@@ -1,73 +1,72 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { useAuth } from "./AuthContext";
 
 const CartContext = createContext();
-
 export const useCart = () => useContext(CartContext);
 
 export const CartProvider = ({ children }) => {
   const [cart, setCart] = useState(() => {
-    try {
-      const saved = localStorage.getItem("paper_cart");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    const saved = localStorage.getItem("diego_cart");
+    return saved ? JSON.parse(saved) : [];
   });
-
-  const { isAdmin } = useAuth();
+  const [cartBounce, setCartBounce] = useState(false);
+  const [lastAddedItem, setLastAddedItem] = useState(null);
 
   useEffect(() => {
-    localStorage.setItem("paper_cart", JSON.stringify(cart));
+    localStorage.setItem("diego_cart", JSON.stringify(cart));
   }, [cart]);
 
-  const addToCart = (product) => {
-    if (isAdmin) return;
-
-    setCart((prev) => {
-      const exists = prev.find((item) => item.id === product.id);
-      if (exists) {
-        return prev.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: Math.min(item.quantity + 1, product.stock || 999) }
-            : item
-        );
-      }
-      return [...prev, { ...product, quantity: 1 }];
-    });
+  const triggerCartAnimation = () => {
+    setCartBounce(true);
+    setTimeout(() => setCartBounce(false), 600);
   };
 
-  const updateQuantity = (id, quantity) => {
-    if (isAdmin) return;
-    if (quantity <= 0) {
+  const addToCart = (product) => {
+    setCart((prevCart) => {
+      const existing = prevCart.find((item) => item.id === product.id);
+      if (existing) {
+        return prevCart.map((item) =>
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      }
+      return [...prevCart, { ...product, quantity: 1 }];
+    });
+
+    setLastAddedItem(product.name);
+    triggerCartAnimation();
+    setTimeout(() => setLastAddedItem(null), 3000);
+  };
+
+  const updateQuantity = (id, newQty) => {
+    if (newQty <= 0) {
       removeFromCart(id);
       return;
     }
-    setCart((prev) => prev.map((it) => (it.id === id ? { ...it, quantity } : it)));
+    setCart((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, quantity: newQty } : item))
+    );
   };
 
   const removeFromCart = (id) => {
-    setCart((prev) => prev.filter((it) => it.id !== id));
+    setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const clearCart = () => {
-    setCart([]);
-    localStorage.removeItem("paper_cart");
-  };
+  const clearCart = () => setCart([]);
 
-  const totalItems = isAdmin ? 0 : cart.reduce((acc, it) => acc + it.quantity, 0);
-  const totalAmount = isAdmin ? 0 : cart.reduce((acc, it) => acc + it.price * it.quantity, 0);
+  const totalAmount = cart.reduce((acc, item) => acc + (Number(item.price) || 0) * item.quantity, 0);
+  const totalItemsCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
     <CartContext.Provider
       value={{
-        cart: isAdmin ? [] : cart,
+        cart,
         addToCart,
         updateQuantity,
         removeFromCart,
         clearCart,
-        totalItems,
-        totalAmount
+        totalAmount,
+        totalItemsCount,
+        cartBounce,
+        lastAddedItem
       }}
     >
       {children}
