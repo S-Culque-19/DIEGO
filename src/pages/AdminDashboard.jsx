@@ -41,7 +41,6 @@ export default function AdminDashboard() {
   const isFirstLoadRef = useRef(true);
   const prevOrdersCountRef = useRef(0);
 
-  // Formulario de catálogo de productos
   const [productForm, setProductForm] = useState({
     name: "",
     category: "Papel Higiénico",
@@ -55,7 +54,7 @@ export default function AdminDashboard() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // 1. Listener de órdenes con alarma sonora ante nuevas compras
+  // Listener de Firebase en tiempo real
   useEffect(() => {
     const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
 
@@ -95,7 +94,7 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  // 2. Filtro temporal dinámico con recálculo inmediato de los 15 rangos
+  // Filtro temporal dinámico con las 15 opciones
   const filteredOrders = useMemo(() => {
     if (timeRange === "all") return orders;
 
@@ -115,34 +114,20 @@ export default function AdminDashboard() {
             orderDate.getMonth() === now.getMonth() &&
             orderDate.getFullYear() === now.getFullYear()
           );
-        case "7d":
-          return diffDays <= 7;
-        case "14d":
-          return diffDays <= 14;
-        case "1m":
-          return diffDays <= 30;
-        case "2m":
-          return diffDays <= 60;
-        case "3m":
-          return diffDays <= 90;
-        case "4m":
-          return diffDays <= 120;
-        case "5m":
-          return diffDays <= 150;
-        case "6m":
-          return diffDays <= 180;
-        case "7m":
-          return diffDays <= 210;
-        case "8m":
-          return diffDays <= 240;
-        case "9m":
-          return diffDays <= 270;
-        case "10m":
-          return diffDays <= 300;
-        case "1y":
-          return diffDays <= 365;
-        default:
-          return true;
+        case "7d": return diffDays <= 7;
+        case "14d": return diffDays <= 14;
+        case "1m": return diffDays <= 30;
+        case "2m": return diffDays <= 60;
+        case "3m": return diffDays <= 90;
+        case "4m": return diffDays <= 120;
+        case "5m": return diffDays <= 150;
+        case "6m": return diffDays <= 180;
+        case "7m": return diffDays <= 210;
+        case "8m": return diffDays <= 240;
+        case "9m": return diffDays <= 270;
+        case "10m": return diffDays <= 300;
+        case "1y": return diffDays <= 365;
+        default: return true;
       }
     });
   }, [orders, timeRange]);
@@ -167,7 +152,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // Recálculo dinámico de métricas financieras
+  // Métricas financieras reactivas
   const totalRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
   const totalCost = filteredOrders.reduce((sum, o) => sum + (Number(o.estimatedCost) || 0), 0);
   const netProfit = totalRevenue - totalCost;
@@ -266,7 +251,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // MOTOR EXCELJS DE ALTO NIVEL CORPORATIVO
+  // EXPORTADOR EXCELJS CORPORATIVO (IMPECABLE)
   const exportAccountingToExcel = async () => {
     if (filteredOrders.length === 0) {
       alert("No existen registros en el período seleccionado para exportar.");
@@ -287,7 +272,7 @@ export default function AdminDashboard() {
       views: [{ showGridLines: true }]
     });
 
-    // Anchos exactos para las 11 columnas
+    // 11 Columnas exactas profesionales
     worksheet.columns = [
       { key: "orderId", width: 15 },
       { key: "date", width: 18 },
@@ -302,7 +287,7 @@ export default function AdminDashboard() {
       { key: "status", width: 14 }
     ];
 
-    // Fila 1: Banner Institucional Azul Petróleo Profundo
+    // Fila 1: Banner Institucional
     worksheet.mergeCells("A1:K1");
     const titleRow = worksheet.getRow(1);
     titleRow.height = 40;
@@ -312,7 +297,7 @@ export default function AdminDashboard() {
     titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002D62" } };
     titleCell.alignment = { vertical: "middle", horizontal: "center" };
 
-    // Fila 2: Metadatos de Conciliación
+    // Fila 2: Subtítulo
     worksheet.mergeCells("A2:K2");
     const subRow = worksheet.getRow(2);
     subRow.height = 22;
@@ -322,10 +307,10 @@ export default function AdminDashboard() {
     subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
     subCell.alignment = { vertical: "middle", horizontal: "center" };
 
-    // Fila 3: Espaciador
+    // Fila 3: Separador
     worksheet.getRow(3).height = 10;
 
-    // Fila 4: Cabecera Azul Ejecutivo
+    // Fila 4: Cabecera
     const headers = [
       "N° PEDIDO",
       "FECHA / HORA",
@@ -364,7 +349,7 @@ export default function AdminDashboard() {
       Pendiente: { bg: "FFFEE2E2", font: "FFB91C1C" }
     };
 
-    // Filas 5+: Cuerpo de datos con diseño Cebra y fórmulas nativas
+    // Filas 5+: Cuerpo
     filteredOrders.forEach((o, index) => {
       const rowIndex = 5 + index;
       const row = worksheet.getRow(rowIndex);
@@ -429,7 +414,7 @@ export default function AdminDashboard() {
       });
     });
 
-    // Fila Final de Totales (Consolidado Bancario con doble borde inferior)
+    // Fila Final de Totales (Consolidado Bancario)
     const summaryRowIndex = 5 + filteredOrders.length;
     const summaryRow = worksheet.getRow(summaryRowIndex);
     summaryRow.height = 32;
@@ -480,20 +465,14 @@ export default function AdminDashboard() {
 
   const getStatusBadgeStyle = (status) => {
     switch (status) {
-      case "Verificado":
-        return { bg: "#EEF2FF", color: "#4F46E5", border: "#C7D2FE" };
-      case "En proceso":
-        return { bg: "#FEF3C7", color: "#D97706", border: "#FDE68A" };
-      case "En camino":
-        return { bg: "#E0F2FE", color: "#0284C7", border: "#BAE6FD" };
-      case "Entregado":
-        return { bg: "#DCFCE7", color: "#15803D", border: "#BBF7D0" };
-      default:
-        return { bg: "#FEE2E2", color: "#B91C1C", border: "#FECACA" };
+      case "Verificado": return { bg: "#EEF2FF", color: "#4F46E5", border: "#C7D2FE" };
+      case "En proceso": return { bg: "#FEF3C7", color: "#D97706", border: "#FDE68A" };
+      case "En camino": return { bg: "#E0F2FE", color: "#0284C7", border: "#BAE6FD" };
+      case "Entregado": return { bg: "#DCFCE7", color: "#15803D", border: "#BBF7D0" };
+      default: return { bg: "#FEE2E2", color: "#B91C1C", border: "#FECACA" };
     }
   };
 
-  // 15 Píldoras multitemporales
   const timePills = [
     { id: "today", label: "1 Día" },
     { id: "7d", label: "7 Días" },
@@ -590,7 +569,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Tarjetas Métricas Reactivas al Rango */}
+      {/* Tarjetas Métricas Reactivas */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "32px" }}>
         <div style={{ background: "#FFF", padding: "20px", borderRadius: "20px", border: "1px solid #E0F2FE" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -1041,7 +1020,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
-
-
-
