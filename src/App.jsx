@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import { AuthProvider, useAuth, formatFirebaseAuthError } from "./context/AuthContext";
+import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
@@ -9,6 +9,28 @@ import ChatAssistant from "./components/ChatAssistant";
 import MyOrdersModal from "./components/MyOrdersModal";
 import { AlertTriangle, X, Loader2 } from "lucide-react";
 
+// Traductor de errores local blindado (sin depender de imports externos)
+function getAuthErrorMessage(error) {
+  const code = error?.code || "";
+  switch (code) {
+    case "auth/email-already-in-use":
+      return "Este correo ya está registrado. Por favor inicia sesión.";
+    case "auth/invalid-email":
+      return "El formato del correo electrónico es inválido.";
+    case "auth/weak-password":
+      return "La contraseña debe tener al menos 6 caracteres.";
+    case "auth/user-not-found":
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+      return "Correo o contraseña incorrectos.";
+    case "auth/network-request-failed":
+      return "Error de conexión. Revisa tu internet.";
+    default:
+      return error?.message || "Ocurrió un error al procesar el acceso.";
+  }
+}
+
+// Modal de Autenticación Rápido
 function AuthModal({ isOpen, onClose }) {
   const [isRegister, setIsRegister] = useState(false);
   const [name, setName] = useState("");
@@ -21,20 +43,16 @@ function AuthModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
-  const resetForm = () => {
+  const handleClose = () => {
     setName("");
     setEmail("");
     setPassword("");
     setErrorDetails(null);
-  };
-
-  const handleClose = () => {
-    resetForm();
     onClose();
   };
 
   const handleSubmit = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
+    e.preventDefault();
     setErrorDetails(null);
     setIsSubmitting(true);
 
@@ -44,25 +62,22 @@ function AuthModal({ isOpen, onClose }) {
 
     try {
       if (isRegister) {
+        if (!signup) throw new Error("Servicio no listo. Recarga la página.");
         await signup(cleanEmail, cleanPassword, cleanName);
       } else {
+        if (!login) throw new Error("Servicio no listo. Recarga la página.");
         await login(cleanEmail, cleanPassword);
       }
-      // Cierre inmediato en el mismo ciclo de microtask
       handleClose();
     } catch (err) {
-      console.error("Detalle del fallo en Auth:", err);
+      console.error("Error al autenticar:", err);
       setErrorDetails({
         code: err?.code || "auth/error",
-        message: formatFirebaseAuthError(err)
+        message: getAuthErrorMessage(err)
       });
+    } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleModeSwitch = (registerMode) => {
-    setIsRegister(registerMode);
-    setErrorDetails(null);
   };
 
   return (
@@ -105,16 +120,7 @@ function AuthModal({ isOpen, onClose }) {
               marginBottom: "16px"
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                color: "#B91C1C",
-                fontWeight: 800,
-                fontSize: "13px"
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#B91C1C", fontWeight: 800, fontSize: "13px" }}>
               <AlertTriangle size={18} />
               <span>{errorDetails.code}</span>
             </div>
@@ -171,7 +177,7 @@ function AuthModal({ isOpen, onClose }) {
             style={{ width: "100%", padding: "14px", marginTop: "8px" }}
           >
             {isSubmitting
-              ? "Accediendo..."
+              ? "Validando..."
               : isRegister
               ? "Completar Registro"
               : "Ingresar a mi Cuenta"}
@@ -182,7 +188,7 @@ function AuthModal({ isOpen, onClose }) {
           {isRegister ? "¿Ya tienes una cuenta?" : "¿Aún no tienes cuenta?"}{" "}
           <button
             type="button"
-            onClick={() => handleModeSwitch(!isRegister)}
+            onClick={() => { setIsRegister(!isRegister); setErrorDetails(null); }}
             style={{
               background: "none",
               border: "none",
@@ -200,26 +206,15 @@ function AuthModal({ isOpen, onClose }) {
   );
 }
 
-// Componente protegido ultra-optimizado: Sin retornos en null para evitar pantalla blanca
+// Ruta protegida sin flickering
 function ProtectedAdminRoute({ children }) {
   const { currentUser, isAdmin, loading } = useAuth();
 
-  // Skeleton / Loader ligero únicamente durante la carga fría del primer inicio
   if (loading) {
     return (
-      <div style={{
-        minHeight: "75vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "12px",
-        backgroundColor: "#F8FAFC"
-      }}>
+      <div style={{ minHeight: "75vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px" }}>
         <Loader2 size={32} color="#0284C7" className="animate-spin" />
-        <span style={{ fontSize: "13px", fontWeight: 700, color: "#64748B" }}>
-          Verificando credenciales de administración...
-        </span>
+        <span style={{ fontSize: "13px", fontWeight: 700, color: "#64748B" }}>Cargando panel...</span>
       </div>
     );
   }
@@ -231,14 +226,13 @@ function ProtectedAdminRoute({ children }) {
   return children;
 }
 
-function MainApp() {
+function MainLayout() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isOrdersOpen, setIsOrdersOpen] = useState(false);
 
   return (
-    <BrowserRouter>
-      {/* El Navbar permanece siempre visible y renderizado */}
+    <>
       <Navbar
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenCart={() => setIsCartOpen(true)}
@@ -270,7 +264,7 @@ function MainApp() {
       <ChatAssistant />
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
       <MyOrdersModal isOpen={isOrdersOpen} onClose={() => setIsOrdersOpen(false)} />
-    </BrowserRouter>
+    </>
   );
 }
 
@@ -278,7 +272,9 @@ export default function App() {
   return (
     <AuthProvider>
       <CartProvider>
-        <MainApp />
+        <BrowserRouter>
+          <MainLayout />
+        </BrowserRouter>
       </CartProvider>
     </AuthProvider>
   );
