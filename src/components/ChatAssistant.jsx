@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { collection, onSnapshot, addDoc, doc, setDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useAuth } from "../context/AuthContext";
-import { MessageSquare, X, Send, Bot, User, Truck, ShieldCheck, PhoneCall } from "lucide-react";
+import { MessageSquare, X, Send, Bot } from "lucide-react";
 
 export default function ChatAssistant() {
   const { currentUser, isAdmin } = useAuth();
@@ -11,15 +11,11 @@ export default function ChatAssistant() {
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef(null);
 
-  // REGLA: Si no hay usuario logueado o es Administrador, el widget NO se renderiza
-  if (!currentUser || isAdmin) return null;
-
-  const chatPath = `chats/${currentUser.uid}/messages`;
-
+  // Hook 1: Escucha en tiempo real (condición dentro del Hook, nunca fuera)
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !currentUser || isAdmin) return;
 
-    // Escucha en tiempo real del canal privado del cliente
+    const chatPath = `chats/${currentUser.uid}/messages`;
     const unsub = onSnapshot(collection(db, chatPath), (snapshot) => {
       const msgs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       msgs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
@@ -27,27 +23,33 @@ export default function ChatAssistant() {
     });
 
     return () => unsub();
-  }, [isOpen, currentUser.uid]);
+  }, [isOpen, currentUser?.uid, isAdmin]);
 
+  // Hook 2: Auto-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isOpen]);
+    if (isOpen && currentUser && !isAdmin) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isOpen, currentUser, isAdmin]);
+
+  // REGLA DE REACT: El retorno condicional va DESPUÉS de todos los Hooks
+  if (!currentUser || isAdmin) return null;
 
   const sendMessage = async (textToSend, sender = "user") => {
     const text = (textToSend || inputText).trim();
-    if (!text) return;
+    if (!text || !currentUser) return;
 
     if (sender === "user") setInputText("");
 
+    const chatPath = `chats/${currentUser.uid}/messages`;
+
     try {
-      // 1. Guardar mensaje en la subcolección
       await addDoc(collection(db, chatPath), {
         sender,
         text,
         createdAt: new Date().toISOString()
       });
 
-      // 2. Actualizar metadata de la conversación para la bandeja del Administrador
       await setDoc(
         doc(db, "chats", currentUser.uid),
         {
@@ -61,18 +63,17 @@ export default function ChatAssistant() {
         { merge: true }
       );
 
-      // Respuesta automática del asistente virtual si escribe el usuario
       if (sender === "user") {
         setTimeout(async () => {
           let reply = "Gracias por escribir a Distribuidora DIEGO. Un asesor revisará tu mensaje a la brevedad.";
           const lower = text.toLowerCase();
 
           if (lower.includes("delivery") || lower.includes("envio") || lower.includes("distrito")) {
-            reply = "Contamos con Delivery 100% Gratuito en Lima Norte: Comas, Independencia, SMP y Los Olivos. También recojo sin costo en MegaPlaza.";
+            reply = "Contamos con Delivery 100% Gratuito en Lima Norte: Comas, Independencia, SMP y Los Olivos. También recojo en MegaPlaza.";
           } else if (lower.includes("precio") || lower.includes("catalogo") || lower.includes("costo")) {
-            reply = "Puedes consultar nuestros precios mayoristas directamente en el catálogo de la página. Planchas de papel higiénico y toalla de alta absorción.";
+            reply = "Puedes consultar nuestros precios mayoristas directamente en el catálogo. Planchas selladas de alta absorción.";
           } else if (lower.includes("pago") || lower.includes("yape") || lower.includes("plin")) {
-            reply = "Aceptamos Yape y Plin directo al número 926 689 484 a nombre de Mecatrónica Pearc S.A.C.";
+            reply = "Aceptamos Yape y Plin al número 926 689 484.";
           }
 
           await addDoc(collection(db, chatPath), {
@@ -89,7 +90,6 @@ export default function ChatAssistant() {
 
   return (
     <>
-      {/* Botón flotante exclusivo para clientes */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
@@ -116,7 +116,6 @@ export default function ChatAssistant() {
         </button>
       )}
 
-      {/* Ventana de Chat Flotante */}
       {isOpen && (
         <div style={{
           position: "fixed",
@@ -133,7 +132,6 @@ export default function ChatAssistant() {
           zIndex: 9990,
           border: "1px solid #E2E8F0"
         }}>
-          {/* Header */}
           <div style={{
             background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)",
             color: "#FFF",
@@ -156,7 +154,6 @@ export default function ChatAssistant() {
             </button>
           </div>
 
-          {/* Cuerpo de Mensajes */}
           <div style={{ flex: 1, padding: "16px", overflowY: "auto", background: "#F8FAFC", display: "flex", flexDirection: "column", gap: "10px" }}>
             <div style={{ background: "#E0F2FE", color: "#0369A1", padding: "10px 14px", borderRadius: "14px", fontSize: "12px", lineHeight: 1.4 }}>
               ¡Hola! Soy el asistente virtual de <strong>Distribuidora DIEGO</strong>. ¿Tienes dudas con distritos, compras o pagos?
@@ -186,7 +183,6 @@ export default function ChatAssistant() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Atajos Rápidos */}
           <div style={{ display: "flex", gap: "6px", padding: "6px 12px", background: "#FFF", borderTop: "1px solid #F1F5F9", overflowX: "auto" }}>
             <button
               onClick={() => sendMessage("¿Cuáles son los distritos de envío gratis?")}
@@ -202,7 +198,6 @@ export default function ChatAssistant() {
             </button>
           </div>
 
-          {/* Formulario Envío */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
