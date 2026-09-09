@@ -61,7 +61,6 @@ export default function PaymentModal({ isOpen, onClose }) {
     setLoading(true);
 
     try {
-      // 1. Sanitizar ítems para que Firestore NUNCA reciba undefined ni referencias raras
       const cleanItems = (cart || []).map((it) => ({
         id: String(it.id || ""),
         name: String(it.name || "Producto"),
@@ -70,7 +69,6 @@ export default function PaymentModal({ isOpen, onClose }) {
         imageUrl: String(it.imageUrl || (it.images && it.images[0]) || "/papel.jpeg")
       }));
 
-      // 2. Costo estimado seguro
       const safeEstimatedCost = (cart || []).reduce(
         (acc, it) => acc + (Number(it.cost) || Number(it.price || 0) * 0.7) * (Number(it.quantity) || 1),
         0
@@ -79,7 +77,6 @@ export default function PaymentModal({ isOpen, onClose }) {
       const safeTotalAmount = Number(totalAmount) || 0;
       const safeNetProfit = safeTotalAmount - safeEstimatedCost;
 
-      // 3. Normalizar correo para cumplir estrictamente con firestore.rules
       const clientEmail = currentUser.email.trim().toLowerCase();
       const clientName = (currentUser.displayName || clientEmail.split("@")[0] || "Cliente").trim();
 
@@ -112,7 +109,7 @@ export default function PaymentModal({ isOpen, onClose }) {
       setSuccess(true);
       clearCart();
     } catch (err) {
-      console.error("Fallo detallado al guardar en Firestore:", err);
+      console.error("Fallo al registrar la orden en Firestore:", err);
       setErrorMessage(err.message || "Error al procesar el pedido.");
     } finally {
       setLoading(false);
@@ -136,7 +133,7 @@ export default function PaymentModal({ isOpen, onClose }) {
               ¡Pedido Registrado con Éxito!
             </h3>
             <p style={{ fontSize: "14px", color: "#64748B", lineHeight: "1.6", marginBottom: "24px" }}>
-              Hemos validado tu solicitud en <b>Distribuidora DIEGO</b>. Puedes hacer seguimiento del despacho en tiempo real desde <b>"Mis Pedidos"</b>.
+              Hemos registrado tu solicitud en <b>Distribuidora DIEGO</b>. Puedes hacer seguimiento del despacho en tiempo real desde <b>"Mis Pedidos"</b>.
             </p>
             <button 
               onClick={() => { setSuccess(false); onClose(); }} 
@@ -204,7 +201,7 @@ export default function PaymentModal({ isOpen, onClose }) {
               </button>
             </div>
 
-            {/* Recuadro de pago Yape/Plin */}
+            {/* Recuadro de pago Yape/Plin con la nueva imagen QR local */}
             <div className="payment-box">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px", fontWeight: 800 }}>
                 <span style={{ display: "flex", alignItems: "center", gap: "6px", color: "#0284C7" }}>
@@ -214,20 +211,34 @@ export default function PaymentModal({ isOpen, onClose }) {
                   926 689 484
                 </span>
               </div>
-              <p style={{ fontSize: "12px", color: "#1E293B", margin: "8px 0 4px" }}>
+              <p style={{ fontSize: "12px", color: "#1E293B", margin: "8px 0 6px" }}>
                 <b>Titular Oficial:</b> Distribuidora DIEGO
               </p>
-              <img
-                src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=YAPE_PLIN_926689484"
-                alt="QR Pago"
-                className="qr-img"
-              />
+
+              {/* Imagen QR Local cargada directamente desde public/qr.jpeg */}
+              <div style={{ display: "flex", justifyContent: "center", margin: "10px 0" }}>
+                <img
+                  src="/qr.jpeg"
+                  alt="QR Oficial de Pago"
+                  style={{
+                    width: "200px",
+                    height: "200px",
+                    objectFit: "contain",
+                    borderRadius: "18px",
+                    backgroundColor: "#FFFFFF",
+                    padding: "8px",
+                    border: "1.5px solid #BAE6FD",
+                    boxShadow: "0 4px 14px rgba(2, 132, 199, 0.12)"
+                  }}
+                />
+              </div>
+
               <div style={{ fontSize: "11px", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
-                <QrCode size={14} /> Escanea con tu app para pagar al instante
+                <QrCode size={14} /> Escanea con Yape o Plin para pagar al instante
               </div>
             </div>
 
-            {/* Si elige Recojo en Punto */}
+            {/* Recojo en Punto */}
             {deliveryMethod === "pickup" ? (
               <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: "16px", padding: "14px", marginBottom: "16px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#065F46", fontWeight: 800, fontSize: "13px" }}>
@@ -239,7 +250,7 @@ export default function PaymentModal({ isOpen, onClose }) {
                 </p>
               </div>
             ) : (
-              /* Si elige Envío a Domicilio */
+              /* Envío a Domicilio */
               <>
                 <div className="form-group">
                   <label className="form-label">Distrito de Entrega</label>
@@ -322,4 +333,3 @@ export default function PaymentModal({ isOpen, onClose }) {
     </div>
   );
 }
-
