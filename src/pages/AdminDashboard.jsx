@@ -28,15 +28,14 @@ import {
   MessageSquare,
   User,
   Volume2,
-  Calendar,
-  Layers
+  Clock
 } from "lucide-react";
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
 
-  // Períodos: 'all' | 'today' | 'week' | 'month' | '2months' | 'year'
+  // 15 Rangos temporales estandarizados
   const [timeRange, setTimeRange] = useState("all");
 
   const isFirstLoadRef = useRef(true);
@@ -56,7 +55,7 @@ export default function AdminDashboard() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // 1. Escucha en tiempo real de pedidos con alarma sonora
+  // 1. Listener de órdenes con alarma sonora ante nuevas compras
   useEffect(() => {
     const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
 
@@ -96,7 +95,7 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  // 2. Filtro temporal dinámico para recálculo instantáneo
+  // 2. Filtro temporal dinámico con recálculo inmediato de los 15 rangos
   const filteredOrders = useMemo(() => {
     if (timeRange === "all") return orders;
 
@@ -116,13 +115,31 @@ export default function AdminDashboard() {
             orderDate.getMonth() === now.getMonth() &&
             orderDate.getFullYear() === now.getFullYear()
           );
-        case "week":
+        case "7d":
           return diffDays <= 7;
-        case "month":
+        case "14d":
+          return diffDays <= 14;
+        case "1m":
           return diffDays <= 30;
-        case "2months":
+        case "2m":
           return diffDays <= 60;
-        case "year":
+        case "3m":
+          return diffDays <= 90;
+        case "4m":
+          return diffDays <= 120;
+        case "5m":
+          return diffDays <= 150;
+        case "6m":
+          return diffDays <= 180;
+        case "7m":
+          return diffDays <= 210;
+        case "8m":
+          return diffDays <= 240;
+        case "9m":
+          return diffDays <= 270;
+        case "10m":
+          return diffDays <= 300;
+        case "1y":
           return diffDays <= 365;
         default:
           return true;
@@ -132,16 +149,25 @@ export default function AdminDashboard() {
 
   const getTimeRangeLabel = () => {
     switch (timeRange) {
-      case "today": return "Hoy";
-      case "week": return "Últimos 7 Días";
-      case "month": return "Últimos 30 Días";
-      case "2months": return "Últimos 60 Días";
-      case "year": return "Último Año";
-      default: return "Histórico Completo";
+      case "today": return "1 Día (Hoy)";
+      case "7d": return "7 Días (1 Semana)";
+      case "14d": return "14 Días (2 Semanas)";
+      case "1m": return "1 Mes (30 Días)";
+      case "2m": return "2 Meses (60 Días)";
+      case "3m": return "3 Meses (90 Días)";
+      case "4m": return "4 Meses (120 Días)";
+      case "5m": return "5 Meses (150 Días)";
+      case "6m": return "6 Meses (Semestre)";
+      case "7m": return "7 Meses";
+      case "8m": return "8 Meses";
+      case "9m": return "9 Meses";
+      case "10m": return "10 Meses";
+      case "1y": return "1 Año (365 Días)";
+      default: return "Histórico Total";
     }
   };
 
-  // Recálculo dinámico de métricas para el período activo
+  // Recálculo dinámico de métricas financieras
   const totalRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
   const totalCost = filteredOrders.reduce((sum, o) => sum + (Number(o.estimatedCost) || 0), 0);
   const netProfit = totalRevenue - totalCost;
@@ -161,7 +187,7 @@ export default function AdminDashboard() {
       try {
         await deleteDoc(doc(db, "orders", orderId));
       } catch (error) {
-        console.error("Error al eliminar orden:", error);
+        console.error("Error al eliminar pedido:", error);
         alert("No se pudo eliminar la orden: " + error.message);
       }
     }
@@ -240,7 +266,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // Motor de Exportación Corporativa con ExcelJS
+  // MOTOR EXCELJS DE ALTO NIVEL CORPORATIVO
   const exportAccountingToExcel = async () => {
     if (filteredOrders.length === 0) {
       alert("No existen registros en el período seleccionado para exportar.");
@@ -261,59 +287,56 @@ export default function AdminDashboard() {
       views: [{ showGridLines: true }]
     });
 
+    // Anchos exactos para las 11 columnas
     worksheet.columns = [
-      { key: "orderId", width: 16 },
-      { key: "date", width: 20 },
-      { key: "client", width: 26 },
-      { key: "email", width: 30 },
-      { key: "modality", width: 24 },
-      { key: "address", width: 32 },
-      { key: "items", width: 42 },
-      { key: "units", width: 12 },
+      { key: "orderId", width: 15 },
+      { key: "date", width: 18 },
+      { key: "client", width: 20 },
+      { key: "email", width: 24 },
+      { key: "modality", width: 26 },
+      { key: "items", width: 38 },
+      { key: "units", width: 10 },
       { key: "revenue", width: 18 },
       { key: "cost", width: 18 },
       { key: "profit", width: 18 },
-      { key: "ref", width: 18 },
-      { key: "status", width: 16 }
+      { key: "status", width: 14 }
     ];
 
-    // Fila 1: Banner Institucional
-    worksheet.mergeCells("A1:M1");
+    // Fila 1: Banner Institucional Azul Petróleo Profundo
+    worksheet.mergeCells("A1:K1");
     const titleRow = worksheet.getRow(1);
-    titleRow.height = 42;
+    titleRow.height = 40;
     const titleCell = worksheet.getCell("A1");
-    titleCell.value = "DISTRIBUIDORA DIEGO — BALANCE FINANCIERO Y CONTROL LOGÍSTICO";
-    titleCell.font = { name: "Calibri", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
+    titleCell.value = "DISTRIBUIDORA DIEGO — BALANCE FINANCIERO Y CONTROL DE OPERACIONES";
+    titleCell.font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
     titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002D62" } };
     titleCell.alignment = { vertical: "middle", horizontal: "center" };
 
-    // Fila 2: Subtítulo
-    worksheet.mergeCells("A2:M2");
+    // Fila 2: Metadatos de Conciliación
+    worksheet.mergeCells("A2:K2");
     const subRow = worksheet.getRow(2);
     subRow.height = 22;
     const subCell = worksheet.getCell("A2");
-    subCell.value = `Período: ${getTimeRangeLabel()}  |  Emisión: ${formattedDate} ${formattedTime}  |  Auditor: vq2403@diego.org.com  |  Registros: ${filteredOrders.length}`;
+    subCell.value = `Período Auditado: ${getTimeRangeLabel()} | Emisión: ${formattedDate} ${formattedTime} | Auditor: vq2403@diego.org.com | Moneda: Soles (S/)`;
     subCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: "FF334155" } };
-    subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F4F8" } };
+    subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F5F9" } };
     subCell.alignment = { vertical: "middle", horizontal: "center" };
 
     // Fila 3: Espaciador
     worksheet.getRow(3).height = 10;
 
-    // Fila 4: Cabeceras
+    // Fila 4: Cabecera Azul Ejecutivo
     const headers = [
       "N° PEDIDO",
-      "FECHA Y HORA",
-      "CLIENTE COMPRADOR",
-      "CORREO ELECTRÓNICO",
-      "MODALIDAD / DISTRITO",
-      "DIRECCIÓN DE ENTREGA",
-      "PRODUCTOS DETALLADOS",
+      "FECHA / HORA",
+      "CLIENTE",
+      "CORREO",
+      "MODALIDAD / DESTINO",
+      "DETALLE DE PRODUCTOS",
       "UNID.",
       "TOTAL VENTA (S/)",
-      "COSTO TOTAL (S/)",
+      "COSTO ESTIMADO (S/)",
       "UTILIDAD NETA (S/)",
-      "REF. OPERACIÓN",
       "ESTADO"
     ];
 
@@ -322,7 +345,7 @@ export default function AdminDashboard() {
     headerRow.height = 28;
 
     headerRow.eachCell((cell) => {
-      cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FFFFFFFF" } };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0A3A60" } };
       cell.alignment = { vertical: "middle", horizontal: "center" };
       cell.border = {
@@ -334,19 +357,14 @@ export default function AdminDashboard() {
     });
 
     const statusTheme = {
+      Entregado: { bg: "FFDCFCE7", font: "FF15803D" },
       Verificado: { bg: "FFEEF2FF", font: "FF4F46E5" },
       "En proceso": { bg: "FFFEF3C7", font: "FFD97706" },
       "En camino": { bg: "FFE0F2FE", font: "FF0284C7" },
-      Entregado: { bg: "FFDCFCE7", font: "FF15803D" },
       Pendiente: { bg: "FFFEE2E2", font: "FFB91C1C" }
     };
 
-    let sumUnits = 0;
-    let sumRevenue = 0;
-    let sumCost = 0;
-    let sumProfit = 0;
-
-    // Filas 5+: Cuerpo de datos con formato cebra
+    // Filas 5+: Cuerpo de datos con diseño Cebra y fórmulas nativas
     filteredOrders.forEach((o, index) => {
       const rowIndex = 5 + index;
       const row = worksheet.getRow(rowIndex);
@@ -363,34 +381,24 @@ export default function AdminDashboard() {
       const units = Number(o.totalItemsCount) || (Array.isArray(o.items) ? o.items.reduce((acc, i) => acc + (i.quantity || 1), 0) : 1);
       const revenue = Number(o.totalAmount || 0);
       const cost = Number(o.estimatedCost || 0);
-      const profit = Number(o.netProfit !== undefined ? o.netProfit : (revenue - cost));
       const statusStr = o.status || "Pendiente";
 
-      sumUnits += units;
-      sumRevenue += revenue;
-      sumCost += cost;
-      sumProfit += profit;
-
-      row.values = [
-        `#D-${o.id.slice(0, 8).toUpperCase()}`,
-        orderDateStr,
-        o.clientName || "Cliente Web",
-        (o.clientEmail || "anonimo@diego.com").toLowerCase(),
-        o.district || "Punto de Entrega",
-        o.address || "Punto de Recojo",
-        itemsStr,
-        units,
-        revenue,
-        cost,
-        profit,
-        o.paymentRef || "N/A",
-        statusStr
-      ];
+      row.getCell(1).value = `#D-${o.id.slice(0, 8).toUpperCase()}`;
+      row.getCell(2).value = orderDateStr;
+      row.getCell(3).value = o.clientName || "Cliente Web";
+      row.getCell(4).value = (o.clientEmail || "anonimo@diego.com").toLowerCase();
+      row.getCell(5).value = o.district ? `${o.district} (${o.address || "Punto de Entrega"})` : (o.address || "Punto de Recojo");
+      row.getCell(6).value = itemsStr;
+      row.getCell(7).value = units;
+      row.getCell(8).value = revenue;
+      row.getCell(9).value = cost;
+      row.getCell(10).value = { formula: `H${rowIndex}-I${rowIndex}` };
+      row.getCell(11).value = statusStr;
 
       const isEven = index % 2 === 1;
       const rowBg = isEven ? "FFF8FAFC" : "FFFFFFFF";
 
-      row.eachCell((cell, colNumber) => {
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         cell.font = { name: "Calibri", size: 10, color: { argb: "FF0F172A" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: rowBg } };
         cell.border = {
@@ -400,51 +408,46 @@ export default function AdminDashboard() {
           right: { style: "thin", color: { argb: "FFCBD5E1" } }
         };
 
-        if (colNumber >= 9 && colNumber <= 11) {
-          cell.numFmt = '"S/ "#,##0.00;[Red]-"S/ "#,##0.00;"S/ "0.00';
-          cell.alignment = { vertical: "middle", horizontal: "right" };
-        } else if (colNumber === 8) {
+        if (colNumber === 1 || colNumber === 2) {
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+        } else if (colNumber >= 3 && colNumber <= 5) {
+          cell.alignment = { vertical: "middle", horizontal: "left" };
+        } else if (colNumber === 6) {
+          cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+        } else if (colNumber === 7) {
           cell.alignment = { vertical: "middle", horizontal: "center" };
           cell.numFmt = "#,##0";
-        } else if (colNumber === 1 || colNumber === 2 || colNumber === 12) {
-          cell.alignment = { vertical: "middle", horizontal: "center" };
-        } else if (colNumber === 7) {
-          cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
-        } else if (colNumber === 13) {
+        } else if (colNumber >= 8 && colNumber <= 10) {
+          cell.numFmt = '"S/ "#,##0.00;[Red]-"S/ "#,##0.00;"S/ "0.00';
+          cell.alignment = { vertical: "middle", horizontal: "right" };
+        } else if (colNumber === 11) {
           const badge = statusTheme[statusStr] || statusTheme["Pendiente"];
           cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: badge.font } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: badge.bg } };
           cell.alignment = { vertical: "middle", horizontal: "center" };
-        } else {
-          cell.alignment = { vertical: "middle", horizontal: "left" };
         }
       });
     });
 
-    // Fila Final de Consolidado Financiero
+    // Fila Final de Totales (Consolidado Bancario con doble borde inferior)
     const summaryRowIndex = 5 + filteredOrders.length;
     const summaryRow = worksheet.getRow(summaryRowIndex);
+    summaryRow.height = 32;
 
-    summaryRow.values = [
-      "CONSOLIDADO TOTAL",
-      "-",
-      "-",
-      "-",
-      "-",
-      "-",
-      "TOTALES DEL PERÍODO",
-      sumUnits,
-      sumRevenue,
-      sumCost,
-      sumProfit,
-      "-",
-      "AUDITADO"
-    ];
+    summaryRow.getCell(1).value = "TOTALES";
+    summaryRow.getCell(2).value = "-";
+    summaryRow.getCell(3).value = "-";
+    summaryRow.getCell(4).value = "-";
+    summaryRow.getCell(5).value = "-";
+    summaryRow.getCell(6).value = "CONSOLIDADO DEL PERÍODO";
+    summaryRow.getCell(7).value = { formula: `SUM(G5:G${summaryRowIndex - 1})` };
+    summaryRow.getCell(8).value = { formula: `SUM(H5:H${summaryRowIndex - 1})` };
+    summaryRow.getCell(9).value = { formula: `SUM(I5:I${summaryRowIndex - 1})` };
+    summaryRow.getCell(10).value = { formula: `SUM(J5:J${summaryRowIndex - 1})` };
+    summaryRow.getCell(11).value = "CONCILIADO";
 
-    summaryRow.height = 30;
-
-    summaryRow.eachCell((cell, colNumber) => {
-      cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FF0F172A" } };
+    summaryRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FF002D62" } };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
       cell.border = {
         top: { style: "thin", color: { argb: "FF0F172A" } },
@@ -453,13 +456,12 @@ export default function AdminDashboard() {
         right: { style: "thin", color: { argb: "FFCBD5E1" } }
       };
 
-      if (colNumber >= 9 && colNumber <= 11) {
-        cell.numFmt = '"S/ "#,##0.00;[Red]-"S/ "#,##0.00;"S/ "0.00';
-        cell.alignment = { vertical: "middle", horizontal: "right" };
-        cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FF0284C7" } };
-      } else if (colNumber === 8) {
+      if (colNumber === 7) {
         cell.alignment = { vertical: "middle", horizontal: "center" };
         cell.numFmt = "#,##0";
+      } else if (colNumber >= 8 && colNumber <= 10) {
+        cell.numFmt = '"S/ "#,##0.00;[Red]-"S/ "#,##0.00;"S/ "0.00';
+        cell.alignment = { vertical: "middle", horizontal: "right" };
       } else {
         cell.alignment = { vertical: "middle", horizontal: "center" };
       }
@@ -476,7 +478,7 @@ export default function AdminDashboard() {
     saveAs(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fileName);
   };
 
-  const getStatusStyle = (status) => {
+  const getStatusBadgeStyle = (status) => {
     switch (status) {
       case "Verificado":
         return { bg: "#EEF2FF", color: "#4F46E5", border: "#C7D2FE" };
@@ -491,9 +493,28 @@ export default function AdminDashboard() {
     }
   };
 
+  // 15 Píldoras multitemporales
+  const timePills = [
+    { id: "today", label: "1 Día" },
+    { id: "7d", label: "7 Días" },
+    { id: "14d", label: "14 Días" },
+    { id: "1m", label: "1 Mes" },
+    { id: "2m", label: "2 Meses" },
+    { id: "3m", label: "3 Meses" },
+    { id: "4m", label: "4 Meses" },
+    { id: "5m", label: "5 Meses" },
+    { id: "6m", label: "6 Meses" },
+    { id: "7m", label: "7 Meses" },
+    { id: "8m", label: "8 Meses" },
+    { id: "9m", label: "9 Meses" },
+    { id: "10m", label: "10 Meses" },
+    { id: "1y", label: "1 Año" },
+    { id: "all", label: "Histórico Total" }
+  ];
+
   return (
     <div style={{ padding: "40px 20px", maxWidth: "1380px", margin: "0 auto", backgroundColor: "#F8FAFC", minHeight: "100vh" }}>
-      {/* Modal Lightbox */}
+      {/* Lightbox Modal */}
       {lightboxImage && (
         <div
           onClick={() => setLightboxImage(null)}
@@ -542,7 +563,7 @@ export default function AdminDashboard() {
             Panel de Operaciones & Despacho
           </h1>
           <p style={{ fontSize: "14px", color: "#64748B", marginTop: "4px" }}>
-            Monitoreo en tiempo real de ventas a clientes, mensajería instantánea y stock.
+            Control financiero centralizado, auditoría de ventas y mensajería en vivo.
           </p>
         </div>
         <button
@@ -569,13 +590,13 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Tarjetas Métricas Dinámicas */}
+      {/* Tarjetas Métricas Reactivas al Rango */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "32px" }}>
         <div style={{ background: "#FFF", padding: "20px", borderRadius: "20px", border: "1px solid #E0F2FE" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{ padding: "12px", background: "#E0F2FE", borderRadius: "14px", color: "#0284C7" }}><DollarSign size={24} /></div>
             <div>
-              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>INGRESOS ({getTimeRangeLabel().toUpperCase()})</div>
+              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>INGRESOS ({timeRange.toUpperCase()})</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>S/ {totalRevenue.toFixed(2)}</div>
             </div>
           </div>
@@ -595,7 +616,7 @@ export default function AdminDashboard() {
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{ padding: "12px", background: "#DCFCE7", borderRadius: "14px", color: "#16A34A" }}><TrendingUp size={24} /></div>
             <div>
-              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>GANANCIA NETA</div>
+              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>UTILIDAD NETA</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#16A34A" }}>S/ {netProfit.toFixed(2)}</div>
             </div>
           </div>
@@ -612,7 +633,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* BANDEJA TIPO MESSENGER INTEGRADA */}
+      {/* Centro de Mensajería en Vivo */}
       <div style={{ marginBottom: "16px" }}>
         <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
           <MessageSquare size={22} color="#0284C7" />
@@ -624,16 +645,16 @@ export default function AdminDashboard() {
       </div>
       <AdminSupportChat />
 
-      {/* TARJETA DE AUDITORÍA GENERAL CON BARRA DE FILTROS INTEGRADA */}
+      {/* TARJETA PRINCIPAL: AUDITORÍA GENERAL CON BARRA MULTITEMPORAL */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", marginBottom: "40px" }}>
-        {/* Cabecera de la Tarjeta */}
+        {/* Cabecera Superior con Botón de Descarga Dinámico */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "16px" }}>
           <div>
             <h2 style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A", margin: 0 }}>
               Auditoría General de Ventas ({filteredOrders.length})
             </h2>
             <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-              Compras emitidas por clientes de la tienda. Actualiza estados de despacho o elimina registros.
+              Compras emitidas por clientes. Actualiza estados logísticos o genera el balance contable.
             </p>
           </div>
 
@@ -646,7 +667,7 @@ export default function AdminDashboard() {
               background: "#10B981",
               color: "#FFF",
               border: "none",
-              padding: "12px 22px",
+              padding: "12px 24px",
               borderRadius: "14px",
               cursor: "pointer",
               fontWeight: 800,
@@ -655,68 +676,67 @@ export default function AdminDashboard() {
             }}
           >
             <FileSpreadsheet size={18} />
-            <span>Descargar Balance {getTimeRangeLabel()} (.xlsx)</span>
+            <span>Descargar Balance de {getTimeRangeLabel()} (.xlsx)</span>
           </button>
         </div>
 
-        {/* BARRA DE FILTRO INTEGRADA TIPO PÍLDORAS */}
+        {/* BARRA MULTITEMPORAL COMPLETA: 15 PÍLDORAS SEGMENTADAS */}
         <div style={{
           background: "#F8FAFC",
-          padding: "12px 16px",
-          borderRadius: "16px",
+          padding: "14px 16px",
+          borderRadius: "18px",
           border: "1px solid #E2E8F0",
-          marginBottom: "20px",
+          marginBottom: "24px",
           display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
+          flexDirection: "column",
           gap: "10px"
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 800, color: "#475569" }}>
-            <Calendar size={15} color="#0284C7" />
-            <span>Filtrar período:</span>
-            <span style={{ color: "#0284C7", background: "#E0F2FE", padding: "2px 8px", borderRadius: "6px" }}>
-              {getTimeRangeLabel()}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 800, color: "#475569" }}>
+              <Clock size={15} color="#0284C7" />
+              <span>Filtrar Balance por Período:</span>
+              <span style={{ color: "#0284C7", background: "#E0F2FE", padding: "3px 10px", borderRadius: "8px", fontWeight: 900 }}>
+                {getTimeRangeLabel()}
+              </span>
+            </div>
+            <span style={{ fontSize: "11px", color: "#94A3B8" }}>
+              {filteredOrders.length} orden(es) auditada(s)
             </span>
           </div>
 
+          {/* Botonera de Píldoras Interactivas */}
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {[
-              { id: "today", label: "Hoy" },
-              { id: "week", label: "7 Días" },
-              { id: "month", label: "1 Mes" },
-              { id: "2months", label: "2 Meses" },
-              { id: "year", label: "1 Año" },
-              { id: "all", label: "Todo" }
-            ].map((tab) => {
-              const isActive = timeRange === tab.id;
+            {timePills.map((pill) => {
+              const isActive = timeRange === pill.id;
               return (
                 <button
-                  key={tab.id}
+                  key={pill.id}
                   type="button"
-                  onClick={() => setTimeRange(tab.id)}
+                  onClick={() => setTimeRange(pill.id)}
                   style={{
-                    padding: "6px 14px",
+                    padding: "6px 13px",
                     borderRadius: "10px",
                     border: isActive ? "1px solid #0284C7" : "1px solid #E2E8F0",
                     background: isActive ? "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" : "#FFFFFF",
-                    color: isActive ? "#FFFFFF" : "#64748B",
+                    color: isActive ? "#FFFFFF" : "#475569",
                     fontWeight: 800,
-                    fontSize: "12px",
+                    fontSize: "11.5px",
                     cursor: "pointer",
                     boxShadow: isActive ? "0 4px 12px rgba(2, 132, 199, 0.25)" : "none",
-                    transition: "all 0.15s ease"
+                    transition: "all 0.15s ease",
+                    whiteSpace: "nowrap"
                   }}
                 >
-                  {tab.label}
+                  {pill.label}
                 </button>
               );
             })}
           </div>
         </div>
 
+        {/* Tabla de Datos de Ventas */}
         {filteredOrders.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "50px 20px", color: "#94A3B8" }}>
+          <div style={{ textAlign: "center", padding: "60px 20px", color: "#94A3B8" }}>
             No hay compras registradas en el período seleccionado ({getTimeRangeLabel()}).
           </div>
         ) : (
@@ -729,14 +749,14 @@ export default function AdminDashboard() {
                   <th style={{ padding: "14px 16px" }}>Productos</th>
                   <th style={{ padding: "14px 16px", textAlign: "center" }}>Cant.</th>
                   <th style={{ padding: "14px 16px" }}>Total</th>
-                  <th style={{ padding: "14px 16px" }}>Operación / Entrega</th>
-                  <th style={{ padding: "14px 16px" }}>Estado de Despacho</th>
+                  <th style={{ padding: "14px 16px" }}>Operación / Destino</th>
+                  <th style={{ padding: "14px 16px" }}>Estado Logístico</th>
                   <th style={{ padding: "14px 16px", textAlign: "center" }}>Acción</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredOrders.map((o) => {
-                  const badge = getStatusStyle(o.status || "Pendiente");
+                  const badge = getStatusBadgeStyle(o.status || "Pendiente");
                   const itemsList = Array.isArray(o.items) && o.items.length > 0 ? o.items : [];
 
                   return (
@@ -857,7 +877,7 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* ÚNICO MOTOR DE CREACIÓN DE PRODUCTOS */}
+      {/* Publicar Producto en el Catálogo */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", marginBottom: "40px" }}>
         <h2 style={{ fontSize: "20px", fontWeight: 900, marginBottom: "18px", display: "flex", alignItems: "center", gap: "10px", color: "#0F172A" }}>
           <PlusCircle size={22} color="#0284C7" /> Publicar Producto en el Catálogo
@@ -957,7 +977,7 @@ export default function AdminDashboard() {
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 800, color: "#475569", marginBottom: "6px" }}>Descripción</label>
             <textarea
-              placeholder="Presentación, características, etc..."
+              placeholder="Presentación, características, rendimiento..."
               value={productForm.description}
               onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
               style={{ width: "100%", padding: "12px", borderRadius: "12px", border: "1px solid #E2E8F0", outline: "none", fontSize: "13px" }}
@@ -985,7 +1005,7 @@ export default function AdminDashboard() {
         </form>
       </div>
 
-      {/* INVENTARIO ACTIVO */}
+      {/* Inventario Activo */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
         <h2 style={{ fontSize: "18px", fontWeight: 900, marginBottom: "16px", color: "#0F172A" }}>
           Inventario Activo ({products.length})
@@ -1021,3 +1041,7 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+
+
+
