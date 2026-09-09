@@ -265,3 +265,5 @@ export default function Navbar({ onOpenCart, onOpenAuth, onOpenOrders }) {
     </header>
   );
 }
+
+

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "./context/AuthContext";
+import { AuthProvider, useAuth, formatFirebaseAuthError } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
@@ -17,7 +17,8 @@ function AuthModal({ isOpen, onClose }) {
   const [errorDetails, setErrorDetails] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { login, register } = useAuth();
+  // Se consume signup en lugar del inexistente register
+  const { login, signup } = useAuth();
 
   if (!isOpen) return null;
 
@@ -27,20 +28,22 @@ function AuthModal({ isOpen, onClose }) {
     setIsSubmitting(true);
 
     const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password;
+    const cleanName = name.trim();
 
     try {
       if (isRegister) {
-        await register(name.trim(), cleanEmail, password);
+        // Orden exacto esperado por AuthContext: email, password, name
+        await signup(cleanEmail, cleanPassword, cleanName);
       } else {
-        await login(cleanEmail, password);
+        await login(cleanEmail, cleanPassword);
       }
       onClose();
     } catch (err) {
       console.error("Detalle completo del fallo en Firebase Auth:", err);
-      // Muestra el código nativo exacto en pantalla (ej: auth/invalid-credential)
       setErrorDetails({
-        code: err.code || "auth/unknown-error",
-        message: err.message || "Error al procesar la solicitud"
+        code: err.code || "auth/error",
+        message: formatFirebaseAuthError(err)
       });
     } finally {
       setIsSubmitting(false);
@@ -82,7 +85,6 @@ function AuthModal({ isOpen, onClose }) {
           </p>
         </div>
 
-        {/* Feedback de error técnico detallado */}
         {errorDetails && (
           <div
             style={{
@@ -104,9 +106,9 @@ function AuthModal({ isOpen, onClose }) {
               }}
             >
               <AlertTriangle size={18} />
-              <span>Código Firebase: {errorDetails.code}</span>
+              <span>{errorDetails.code}</span>
             </div>
-            <p style={{ fontSize: "11px", color: "#7F1D1D", marginTop: "4px", wordBreak: "break-word" }}>
+            <p style={{ fontSize: "12px", color: "#7F1D1D", marginTop: "4px", wordBreak: "break-word" }}>
               {errorDetails.message}
             </p>
           </div>
@@ -144,6 +146,7 @@ function AuthModal({ isOpen, onClose }) {
             <input
               type="password"
               required
+              minLength={6}
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

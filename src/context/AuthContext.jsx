@@ -14,12 +14,11 @@ export const useAuth = () => useContext(AuthContext);
 
 const ADMIN_EMAIL = "vq2403@diego.org.com";
 
-// Formateador amigable de errores de autenticación
 export const formatFirebaseAuthError = (error) => {
   const code = error?.code || "";
   switch (code) {
     case "auth/email-already-in-use":
-      return "Este correo ya está registrado. Inicia sesión directamente.";
+      return "Este correo ya se encuentra registrado. Inicia sesión directamente.";
     case "auth/invalid-email":
       return "El formato del correo electrónico no es válido.";
     case "auth/weak-password":
@@ -27,20 +26,21 @@ export const formatFirebaseAuthError = (error) => {
     case "auth/user-not-found":
     case "auth/wrong-password":
     case "auth/invalid-credential":
-      return "Correo o contraseña incorrectos.";
+      return "Credenciales incorrectas. Verifica tu correo y contraseña.";
+    case "auth/too-many-requests":
+      return "Demasiados intentos fallidos. Inténtalo de nuevo en unos minutos.";
     case "auth/network-request-failed":
-      return "Error de conexión. Revisa tu internet.";
+      return "Error de red. Revisa tu conexión a internet.";
     default:
-      return error?.message || "Ocurrió un error al procesar el acceso.";
+      return error?.message || "Ocurrió un error al autenticar.";
   }
 };
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
-  const [userRole, setUserRole] = useState(null); // 'admin' | 'client' | null
+  const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Escucha activa de sesión (Firebase Auth gestiona la persistencia nativa automáticamente)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -61,7 +61,7 @@ export const AuthProvider = ({ children }) => {
             });
           }
         } catch (error) {
-          console.warn("Aviso perfil Firestore:", error);
+          console.warn("Aviso Firestore perfil:", error);
         }
 
         setCurrentUser(user);
@@ -76,13 +76,11 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  // Inicio de sesión normalizado
   const login = async (email, password) => {
     if (!email || !password) throw new Error("Ingresa correo y contraseña.");
     return signInWithEmailAndPassword(auth, email.trim(), password);
   };
 
-  // Registro limpio sin funciones rotas
   const signup = async (email, password, name) => {
     const cleanEmail = (email || "").trim().toLowerCase();
     const cleanPassword = password || "";
@@ -95,19 +93,19 @@ export const AuthProvider = ({ children }) => {
       throw new Error("La contraseña debe tener al menos 6 caracteres.");
     }
 
-    // 1. Crear cuenta en Firebase Auth
+    // 1. Registro directo en Firebase Authentication
     const cred = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
 
-    // 2. Asignar nombre en el perfil del usuario de Auth
+    // 2. Actualización de perfil
     if (cleanName) {
       try {
         await updateProfile(cred.user, { displayName: cleanName });
       } catch (err) {
-        console.warn("No se pudo actualizar el nombre:", err);
+        console.warn("No se pudo actualizar displayName:", err);
       }
     }
 
-    // 3. Crear documento en Firestore
+    // 3. Documento en Firestore
     const isAdmin = cleanEmail === ADMIN_EMAIL.toLowerCase();
     const role = isAdmin ? "admin" : "client";
 
@@ -120,13 +118,13 @@ export const AuthProvider = ({ children }) => {
         createdAt: new Date().toISOString()
       });
     } catch (err) {
-      console.warn("Error al registrar documento usuario:", err);
+      console.warn("Error guardando usuario en Firestore:", err);
     }
 
     return cred;
   };
 
-  // Cierre de sesión seguro y limpieza de caché local
+  // Cierre de sesión seguro y limpieza de estado local
   const logout = async () => {
     localStorage.removeItem("diego_cart");
     setCurrentUser(null);
@@ -143,6 +141,7 @@ export const AuthProvider = ({ children }) => {
         isClient: userRole === "client",
         login,
         signup,
+        register: (name, email, password) => signup(email, password, name), // Alias seguro
         logout,
         loading
       }}
