@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth, formatFirebaseAuthError } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import Navbar from "./components/Navbar";
@@ -7,7 +7,7 @@ import Home from "./pages/Home";
 import AdminDashboard from "./pages/AdminDashboard";
 import ChatAssistant from "./components/ChatAssistant";
 import MyOrdersModal from "./components/MyOrdersModal";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, X, Loader2 } from "lucide-react";
 
 function AuthModal({ isOpen, onClose }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -17,35 +17,45 @@ function AuthModal({ isOpen, onClose }) {
   const [errorDetails, setErrorDetails] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Se consume signup en lugar del inexistente register
   const { login, signup } = useAuth();
 
   if (!isOpen) return null;
 
+  const resetForm = () => {
+    setName("");
+    setEmail("");
+    setPassword("");
+    setErrorDetails(null);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setErrorDetails(null);
     setIsSubmitting(true);
 
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPassword = password;
-    const cleanName = name.trim();
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPassword = password || "";
+    const cleanName = (name || "").trim();
 
     try {
       if (isRegister) {
-        // Orden exacto esperado por AuthContext: email, password, name
         await signup(cleanEmail, cleanPassword, cleanName);
       } else {
         await login(cleanEmail, cleanPassword);
       }
-      onClose();
+      // Cierre inmediato en el mismo ciclo de microtask
+      handleClose();
     } catch (err) {
-      console.error("Detalle completo del fallo en Firebase Auth:", err);
+      console.error("Detalle del fallo en Auth:", err);
       setErrorDetails({
-        code: err.code || "auth/error",
+        code: err?.code || "auth/error",
         message: formatFirebaseAuthError(err)
       });
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -56,10 +66,10 @@ function AuthModal({ isOpen, onClose }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={handleClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <button
-          onClick={onClose}
+          onClick={handleClose}
           style={{
             position: "absolute",
             top: "20px",
@@ -81,7 +91,7 @@ function AuthModal({ isOpen, onClose }) {
           <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
             {isRegister
               ? "Regístrate para guardar y dar seguimiento a tus compras."
-              : "Accede para gestionar la tienda o procesar pagos."}
+              : "Accede para gestionar tus compras o despachos."}
           </p>
         </div>
 
@@ -161,7 +171,7 @@ function AuthModal({ isOpen, onClose }) {
             style={{ width: "100%", padding: "14px", marginTop: "8px" }}
           >
             {isSubmitting
-              ? "Verificando con Firebase..."
+              ? "Accediendo..."
               : isRegister
               ? "Completar Registro"
               : "Ingresar a mi Cuenta"}
@@ -190,12 +200,34 @@ function AuthModal({ isOpen, onClose }) {
   );
 }
 
+// Componente protegido ultra-optimizado: Sin retornos en null para evitar pantalla blanca
 function ProtectedAdminRoute({ children }) {
   const { currentUser, isAdmin, loading } = useAuth();
-  if (loading) return null;
+
+  // Skeleton / Loader ligero únicamente durante la carga fría del primer inicio
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "75vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "12px",
+        backgroundColor: "#F8FAFC"
+      }}>
+        <Loader2 size={32} color="#0284C7" className="animate-spin" />
+        <span style={{ fontSize: "13px", fontWeight: 700, color: "#64748B" }}>
+          Verificando credenciales de administración...
+        </span>
+      </div>
+    );
+  }
+
   if (!currentUser || !isAdmin) {
     return <Navigate to="/" replace />;
   }
+
   return children;
 }
 
@@ -206,11 +238,13 @@ function MainApp() {
 
   return (
     <BrowserRouter>
+      {/* El Navbar permanece siempre visible y renderizado */}
       <Navbar
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenCart={() => setIsCartOpen(true)}
         onOpenOrders={() => setIsOrdersOpen(true)}
       />
+
       <Routes>
         <Route
           path="/"
