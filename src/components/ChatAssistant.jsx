@@ -11,16 +11,20 @@ export default function ChatAssistant() {
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef(null);
 
-  // Hook 1: Escucha en tiempo real (condición dentro del Hook, nunca fuera)
+  // Hook 1: Escucha en tiempo real del canal privado del cliente
   useEffect(() => {
     if (!isOpen || !currentUser || isAdmin) return;
 
     const chatPath = `chats/${currentUser.uid}/messages`;
-    const unsub = onSnapshot(collection(db, chatPath), (snapshot) => {
-      const msgs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      msgs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-      setMessages(msgs);
-    });
+    const unsub = onSnapshot(
+      collection(db, chatPath),
+      (snapshot) => {
+        const msgs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        msgs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+        setMessages(msgs);
+      },
+      (err) => console.error("Error al escuchar mensajes:", err)
+    );
 
     return () => unsub();
   }, [isOpen, currentUser?.uid, isAdmin]);
@@ -32,7 +36,7 @@ export default function ChatAssistant() {
     }
   }, [messages, isOpen, currentUser, isAdmin]);
 
-  // REGLA DE REACT: El retorno condicional va DESPUÉS de todos los Hooks
+  // Regla React: Retorno condicional después de todos los Hooks
   if (!currentUser || isAdmin) return null;
 
   const sendMessage = async (textToSend, sender = "user") => {
@@ -44,12 +48,14 @@ export default function ChatAssistant() {
     const chatPath = `chats/${currentUser.uid}/messages`;
 
     try {
+      // 1. Guardar mensaje en subcolección privada
       await addDoc(collection(db, chatPath), {
         sender,
         text,
         createdAt: new Date().toISOString()
       });
 
+      // 2. Notificar al panel del Administrador
       await setDoc(
         doc(db, "chats", currentUser.uid),
         {
@@ -63,17 +69,18 @@ export default function ChatAssistant() {
         { merge: true }
       );
 
+      // Auto-respuesta asistencial
       if (sender === "user") {
         setTimeout(async () => {
-          let reply = "Gracias por escribir a Distribuidora DIEGO. Un asesor revisará tu mensaje a la brevedad.";
+          let reply = "Gracias por escribir a Distribuidora DIEGO. Un asesor responderá tu consulta a la brevedad.";
           const lower = text.toLowerCase();
 
           if (lower.includes("delivery") || lower.includes("envio") || lower.includes("distrito")) {
             reply = "Contamos con Delivery 100% Gratuito en Lima Norte: Comas, Independencia, SMP y Los Olivos. También recojo en MegaPlaza.";
           } else if (lower.includes("precio") || lower.includes("catalogo") || lower.includes("costo")) {
-            reply = "Puedes consultar nuestros precios mayoristas directamente en el catálogo. Planchas selladas de alta absorción.";
+            reply = "Puedes consultar nuestros precios mayoristas directamente en el catálogo web. Planchas termoselladas de alta absorción.";
           } else if (lower.includes("pago") || lower.includes("yape") || lower.includes("plin")) {
-            reply = "Aceptamos Yape y Plin al número 926 689 484.";
+            reply = "Aceptamos Yape y Plin oficial al 926 689 484 a nombre de Distribuidora DIEGO.";
           }
 
           await addDoc(collection(db, chatPath), {
@@ -176,7 +183,10 @@ export default function ChatAssistant() {
                     border: isUser ? "none" : "1px solid #E2E8F0"
                   }}
                 >
-                  {m.text}
+                  <div style={{ fontSize: "10px", fontWeight: 800, opacity: 0.75, marginBottom: "2px" }}>
+                    {isUser ? "Tú" : m.sender === "admin" ? "Asesor DIEGO" : "Bot"}
+                  </div>
+                  <div>{m.text}</div>
                 </div>
               );
             })}
