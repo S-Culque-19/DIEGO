@@ -29,21 +29,20 @@ import {
   User,
   Volume2,
   Calendar,
-  Filter
+  Layers
 } from "lucide-react";
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
-  
-  // Selector de período temporal
-  // Opciones: 'all' | 'today' | 'week' | 'month' | '2months' | 'year'
+
+  // Períodos: 'all' | 'today' | 'week' | 'month' | '2months' | 'year'
   const [timeRange, setTimeRange] = useState("all");
 
   const isFirstLoadRef = useRef(true);
   const prevOrdersCountRef = useRef(0);
 
-  // Formulario único de productos
+  // Formulario de catálogo de productos
   const [productForm, setProductForm] = useState({
     name: "",
     category: "Papel Higiénico",
@@ -57,7 +56,7 @@ export default function AdminDashboard() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // 1. Escucha en tiempo real de Órdenes y Productos con alarma sonora ante nuevas compras
+  // 1. Escucha en tiempo real de pedidos con alarma sonora
   useEffect(() => {
     const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
 
@@ -66,7 +65,6 @@ export default function AdminDashboard() {
       (snap) => {
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // Detectar si ingresó una nueva orden de compra emitida por un cliente
         if (!isFirstLoadRef.current && items.length > prevOrdersCountRef.current) {
           const newestOrder = items[0];
           playNotificationChime();
@@ -98,7 +96,7 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  // 2. Filtro temporal dinámico para Balance (Día, Semana, Mes, 2 Meses, Año)
+  // 2. Filtro temporal dinámico para recálculo instantáneo
   const filteredOrders = useMemo(() => {
     if (timeRange === "all") return orders;
 
@@ -112,13 +110,12 @@ export default function AdminDashboard() {
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
 
       switch (timeRange) {
-        case "today": {
+        case "today":
           return (
             orderDate.getDate() === now.getDate() &&
             orderDate.getMonth() === now.getMonth() &&
             orderDate.getFullYear() === now.getFullYear()
           );
-        }
         case "week":
           return diffDays <= 7;
         case "month":
@@ -135,16 +132,16 @@ export default function AdminDashboard() {
 
   const getTimeRangeLabel = () => {
     switch (timeRange) {
-      case "today": return "Balance del Día (Hoy)";
-      case "week": return "Últimos 7 Días (Semana)";
-      case "month": return "Últimos 30 Días (Mes)";
-      case "2months": return "Últimos 60 Días (2 Meses)";
-      case "year": return "Último Año (12 Meses)";
+      case "today": return "Hoy";
+      case "week": return "Últimos 7 Días";
+      case "month": return "Últimos 30 Días";
+      case "2months": return "Últimos 60 Días";
+      case "year": return "Último Año";
       default: return "Histórico Completo";
     }
   };
 
-  // Métricas financieras calculadas según el período activo
+  // Recálculo dinámico de métricas para el período activo
   const totalRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
   const totalCost = filteredOrders.reduce((sum, o) => sum + (Number(o.estimatedCost) || 0), 0);
   const netProfit = totalRevenue - totalCost;
@@ -243,10 +240,10 @@ export default function AdminDashboard() {
     }
   };
 
-  // EXPORTACIÓN A EXCEL CORPORATIVA CON EXCELJS
+  // Motor de Exportación Corporativa con ExcelJS
   const exportAccountingToExcel = async () => {
     if (filteredOrders.length === 0) {
-      alert("No hay registros en el período seleccionado para exportar.");
+      alert("No existen registros en el período seleccionado para exportar.");
       return;
     }
 
@@ -264,7 +261,6 @@ export default function AdminDashboard() {
       views: [{ showGridLines: true }]
     });
 
-    // 1. Configuración estricta de anchos de columna (A hasta M)
     worksheet.columns = [
       { key: "orderId", width: 16 },
       { key: "date", width: 20 },
@@ -281,7 +277,7 @@ export default function AdminDashboard() {
       { key: "status", width: 16 }
     ];
 
-    // 2. Fila 1: Banner Institucional
+    // Fila 1: Banner Institucional
     worksheet.mergeCells("A1:M1");
     const titleRow = worksheet.getRow(1);
     titleRow.height = 42;
@@ -291,7 +287,7 @@ export default function AdminDashboard() {
     titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002D62" } };
     titleCell.alignment = { vertical: "middle", horizontal: "center" };
 
-    // 3. Fila 2: Subtítulo con Período y Auditoría
+    // Fila 2: Subtítulo
     worksheet.mergeCells("A2:M2");
     const subRow = worksheet.getRow(2);
     subRow.height = 22;
@@ -301,10 +297,10 @@ export default function AdminDashboard() {
     subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F4F8" } };
     subCell.alignment = { vertical: "middle", horizontal: "center" };
 
-    // 4. Fila 3: Fila vacía de separación
+    // Fila 3: Espaciador
     worksheet.getRow(3).height = 10;
 
-    // 5. Fila 4: Cabecera de Tabla
+    // Fila 4: Cabeceras
     const headers = [
       "N° PEDIDO",
       "FECHA Y HORA",
@@ -350,7 +346,7 @@ export default function AdminDashboard() {
     let sumCost = 0;
     let sumProfit = 0;
 
-    // 6. Filas 5+: Datos con diseño Cebra y formato numérico contable
+    // Filas 5+: Cuerpo de datos con formato cebra
     filteredOrders.forEach((o, index) => {
       const rowIndex = 5 + index;
       const row = worksheet.getRow(rowIndex);
@@ -425,7 +421,7 @@ export default function AdminDashboard() {
       });
     });
 
-    // 7. Fila Final de Consolidado Financiero (Totales)
+    // Fila Final de Consolidado Financiero
     const summaryRowIndex = 5 + filteredOrders.length;
     const summaryRow = worksheet.getRow(summaryRowIndex);
 
@@ -469,7 +465,6 @@ export default function AdminDashboard() {
       }
     });
 
-    // 8. Generación del Blob y Descarga Automática
     const buffer = await workbook.xlsx.writeBuffer();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -498,7 +493,7 @@ export default function AdminDashboard() {
 
   return (
     <div style={{ padding: "40px 20px", maxWidth: "1380px", margin: "0 auto", backgroundColor: "#F8FAFC", minHeight: "100vh" }}>
-      {/* Lightbox */}
+      {/* Modal Lightbox */}
       {lightboxImage && (
         <div
           onClick={() => setLightboxImage(null)}
@@ -540,7 +535,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Header con disparador de alarma industrial */}
+      {/* Header General */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1 style={{ fontSize: "28px", fontWeight: 900, color: "#0F172A", margin: 0 }}>
@@ -574,54 +569,13 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* BARRA DE FILTRO TEMPORAL PARA EL BALANCE */}
-      <div style={{ background: "#FFF", padding: "16px 20px", borderRadius: "18px", border: "1px solid #E2E8F0", marginBottom: "24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", boxShadow: "0 2px 6px rgba(0,0,0,0.02)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#0F172A", fontWeight: 800, fontSize: "14px" }}>
-          <Calendar size={18} color="#0284C7" />
-          <span>Período del Balance:</span>
-          <span style={{ color: "#0284C7" }}>{getTimeRangeLabel()}</span>
-        </div>
-
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-          {[
-            { id: "today", label: "Hoy" },
-            { id: "week", label: "7 Días" },
-            { id: "month", label: "1 Mes" },
-            { id: "2months", label: "2 Meses" },
-            { id: "year", label: "1 Año" },
-            { id: "all", label: "Histórico Total" }
-          ].map((tab) => {
-            const isActive = timeRange === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setTimeRange(tab.id)}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: "10px",
-                  border: isActive ? "1.5px solid #0284C7" : "1px solid #E2E8F0",
-                  background: isActive ? "#0284C7" : "#F8FAFC",
-                  color: isActive ? "#FFF" : "#475569",
-                  fontWeight: 800,
-                  fontSize: "12px",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease"
-                }}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Tarjetas Métricas Dinámicas */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "32px" }}>
         <div style={{ background: "#FFF", padding: "20px", borderRadius: "20px", border: "1px solid #E0F2FE" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{ padding: "12px", background: "#E0F2FE", borderRadius: "14px", color: "#0284C7" }}><DollarSign size={24} /></div>
             <div>
-              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>INGRESOS ({timeRange.toUpperCase()})</div>
+              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>INGRESOS ({getTimeRangeLabel().toUpperCase()})</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>S/ {totalRevenue.toFixed(2)}</div>
             </div>
           </div>
@@ -670,17 +624,19 @@ export default function AdminDashboard() {
       </div>
       <AdminSupportChat />
 
-      {/* REGISTRO DE VENTAS A CLIENTES (FILTRADO POR PERÍODO) */}
+      {/* TARJETA DE AUDITORÍA GENERAL CON BARRA DE FILTROS INTEGRADA */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", marginBottom: "40px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
+        {/* Cabecera de la Tarjeta */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", flexWrap: "wrap", gap: "16px" }}>
           <div>
-            <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0 }}>
+            <h2 style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A", margin: 0 }}>
               Auditoría General de Ventas ({filteredOrders.length})
             </h2>
             <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-              Mostrando registros de: <strong>{getTimeRangeLabel()}</strong>
+              Compras emitidas por clientes de la tienda. Actualiza estados de despacho o elimina registros.
             </p>
           </div>
+
           <button
             onClick={exportAccountingToExcel}
             style={{
@@ -690,22 +646,78 @@ export default function AdminDashboard() {
               background: "#10B981",
               color: "#FFF",
               border: "none",
-              padding: "12px 20px",
+              padding: "12px 22px",
               borderRadius: "14px",
               cursor: "pointer",
               fontWeight: 800,
               fontSize: "13px",
-              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.2)"
+              boxShadow: "0 4px 14px rgba(16, 185, 129, 0.25)"
             }}
           >
             <FileSpreadsheet size={18} />
-            <span>Exportar {getTimeRangeLabel()} (.xlsx)</span>
+            <span>Descargar Balance {getTimeRangeLabel()} (.xlsx)</span>
           </button>
         </div>
 
+        {/* BARRA DE FILTRO INTEGRADA TIPO PÍLDORAS */}
+        <div style={{
+          background: "#F8FAFC",
+          padding: "12px 16px",
+          borderRadius: "16px",
+          border: "1px solid #E2E8F0",
+          marginBottom: "20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "10px"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: 800, color: "#475569" }}>
+            <Calendar size={15} color="#0284C7" />
+            <span>Filtrar período:</span>
+            <span style={{ color: "#0284C7", background: "#E0F2FE", padding: "2px 8px", borderRadius: "6px" }}>
+              {getTimeRangeLabel()}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            {[
+              { id: "today", label: "Hoy" },
+              { id: "week", label: "7 Días" },
+              { id: "month", label: "1 Mes" },
+              { id: "2months", label: "2 Meses" },
+              { id: "year", label: "1 Año" },
+              { id: "all", label: "Todo" }
+            ].map((tab) => {
+              const isActive = timeRange === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setTimeRange(tab.id)}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: "10px",
+                    border: isActive ? "1px solid #0284C7" : "1px solid #E2E8F0",
+                    background: isActive ? "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)" : "#FFFFFF",
+                    color: isActive ? "#FFFFFF" : "#64748B",
+                    fontWeight: 800,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    boxShadow: isActive ? "0 4px 12px rgba(2, 132, 199, 0.25)" : "none",
+                    transition: "all 0.15s ease"
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {filteredOrders.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px 20px", color: "#94A3B8" }}>
-            No hay compras registradas en este período temporal.
+          <div style={{ textAlign: "center", padding: "50px 20px", color: "#94A3B8" }}>
+            No hay compras registradas en el período seleccionado ({getTimeRangeLabel()}).
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
