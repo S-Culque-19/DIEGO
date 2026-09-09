@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   collection,
   onSnapshot,
@@ -21,19 +21,23 @@ import {
   PlusCircle,
   Trash2,
   Upload,
-  BellRing,
   X,
   CreditCard,
   MapPin,
   MessageSquare,
-  User
+  User,
+  Volume2
 } from "lucide-react";
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
 
-  // Único formulario de productos
+  // Referencia para rastrear la primera carga y disparar la alarma solo ante pedidos nuevos
+  const isFirstLoadRef = useRef(true);
+  const prevOrdersCountRef = useRef(0);
+
+  // Formulario único de productos
   const [productForm, setProductForm] = useState({
     name: "",
     category: "Papel Higiénico",
@@ -47,7 +51,7 @@ export default function AdminDashboard() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Escucha de órdenes y productos sin loops de re-render
+  // 1. Escucha en tiempo real de Órdenes con disparador de Sirena Industrial
   useEffect(() => {
     const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
 
@@ -55,9 +59,22 @@ export default function AdminDashboard() {
       ordersQuery,
       (snap) => {
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        
+        // Detección de compra nueva realizada por un cliente
+        if (!isFirstLoadRef.current && items.length > prevOrdersCountRef.current) {
+          const newestOrder = items[0];
+          playNotificationChime();
+          triggerBrowserNotification(
+            "¡NUEVA COMPRA REGISTRADA!",
+            `Cliente: ${newestOrder?.clientName || "Cliente"} | Total: S/ ${Number(newestOrder?.totalAmount || 0).toFixed(2)}`
+          );
+        }
+
+        prevOrdersCountRef.current = items.length;
+        isFirstLoadRef.current = false;
         setOrders(items);
       },
-      (err) => console.error("Error al escuchar órdenes:", err)
+      (err) => console.error("Error al escuchar órdenes en tiempo real:", err)
     );
 
     const unsubProducts = onSnapshot(
@@ -85,7 +102,7 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteOrder = async (orderId) => {
-    if (window.confirm(`¿Confirmas la eliminación permanente de la orden #${orderId.slice(0, 8)}?`)) {
+    if (window.confirm(`¿Confirmas la eliminación permanente del registro de venta #${orderId.slice(0, 8)}?`)) {
       try {
         await deleteDoc(doc(db, "orders", orderId));
       } catch (error) {
@@ -153,7 +170,7 @@ export default function AdminDashboard() {
         description: "",
         images: []
       });
-      alert("¡Producto publicado exitosamente!");
+      alert("¡Producto publicado en el catálogo exitosamente!");
     } catch (err) {
       console.error(err);
       alert("Error al guardar en base de datos: " + err.message);
@@ -174,34 +191,25 @@ export default function AdminDashboard() {
   const netProfit = totalRevenue - totalCost;
   const totalUnitsSold = orders.reduce((sum, o) => sum + (Number(o.totalItemsCount) || 0), 0);
 
-  // EXPORTACIÓN A EXCEL EJECUTIVA Y FORMATEADA
+  // EXPORTACIÓN A EXCEL FORMATEADA CON SHEETJS
   const exportAccountingToExcel = () => {
     if (orders.length === 0) {
-      alert("No existen órdenes registradas para exportar.");
+      alert("No hay registros de ventas para exportar.");
       return;
     }
 
     const now = new Date();
-    const formattedDate = now.toLocaleDateString("es-PE", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric"
-    });
-    const formattedTime = now.toLocaleTimeString("es-PE", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    });
+    const formattedDate = now.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const formattedTime = now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-    // 1. Matriz de Datos con Encabezados y Metadatos
     const sheetData = [
       ["DISTRIBUIDORA DIEGO - REPORTE GERENCIAL DE VENTAS Y DESPACHO"],
-      [`Emisión: ${formattedDate} ${formattedTime} | Auditor: vq2403@diego.org.com | Total Registros: ${orders.length}`],
-      [], // Fila en blanco
+      [`Emisión: ${formattedDate} ${formattedTime} | Administrador: vq2403@diego.org.com | Total Registros: ${orders.length}`],
+      [],
       [
         "N° PEDIDO",
         "FECHA Y HORA",
-        "CLIENTE",
+        "CLIENTE COMPRADOR",
         "CORREO ELECTRÓNICO",
         "MODALIDAD / DISTRITO",
         "DIRECCIÓN EXACTA",
@@ -220,7 +228,6 @@ export default function AdminDashboard() {
     let sumCost = 0;
     let sumProfit = 0;
 
-    // 2. Mapeo de Registros
     orders.forEach((o) => {
       const orderDate = o.createdAt ? new Date(o.createdAt) : null;
       const orderDateStr = orderDate
@@ -247,7 +254,7 @@ export default function AdminDashboard() {
         o.clientName || "Cliente Web",
         (o.clientEmail || "anonimo@diego.com").toLowerCase(),
         o.district || "Punto de Entrega",
-        o.address || "Punto de Recojo Oficial",
+        o.address || "Punto de Recojo",
         itemsStr,
         units,
         Number(revenue.toFixed(2)),
@@ -258,7 +265,6 @@ export default function AdminDashboard() {
       ]);
     });
 
-    // 3. Fila de Consolidado Financiero (Totales)
     sheetData.push([]);
     sheetData.push([
       "CONSOLIDADO TOTAL",
@@ -276,30 +282,27 @@ export default function AdminDashboard() {
       "AUDITADO"
     ]);
 
-    // 4. Creación de Workbook y Hoja
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
 
-    // 5. Configuración de Anchos de Columna Óptimos (!cols)
     worksheet["!cols"] = [
-      { wch: 14 }, // N° PEDIDO
-      { wch: 19 }, // FECHA Y HORA
-      { wch: 24 }, // CLIENTE
-      { wch: 28 }, // CORREO
-      { wch: 22 }, // DISTRITO
-      { wch: 34 }, // DIRECCIÓN
-      { wch: 38 }, // DETALLE PRODUCTOS
-      { wch: 14 }, // UNIDADES
-      { wch: 18 }, // INGRESO BRUTO
-      { wch: 18 }, // COSTO ESTIMADO
-      { wch: 18 }, // UTILIDAD NETA
-      { wch: 18 }, // REF PAGO
-      { wch: 16 }  // ESTADO
+      { wch: 14 },
+      { wch: 19 },
+      { wch: 24 },
+      { wch: 28 },
+      { wch: 22 },
+      { wch: 34 },
+      { wch: 38 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 16 }
     ];
 
     XLSX.utils.book_append_sheet(workbook, worksheet, "Balance_General");
 
-    // 6. Descarga con Nomenclatura Automática
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
@@ -369,40 +372,41 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header con disparador de alarma industrial */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1 style={{ fontSize: "28px", fontWeight: 900, color: "#0F172A", margin: 0 }}>
             Panel de Operaciones & Despacho
           </h1>
           <p style={{ fontSize: "14px", color: "#64748B", marginTop: "4px" }}>
-            Auditoría de compras, actualización de estados, mensajería y gestión de inventario.
+            Monitoreo en tiempo real de ventas a clientes, mensajería instantánea y stock.
           </p>
         </div>
         <button
           onClick={() => {
             playNotificationChime();
-            triggerBrowserNotification("Alerta Activa", "Notificaciones operativas en tiempo real.");
+            triggerBrowserNotification("Alarma Industrial Activada", "Sirena modulada de 5 segundos con vibración háptica continua.");
           }}
           style={{
             display: "flex",
             alignItems: "center",
             gap: "8px",
-            background: "#FFF",
-            border: "1px solid #E2E8F0",
-            padding: "10px 18px",
+            background: "#DC2626",
+            color: "#FFF",
+            border: "none",
+            padding: "12px 20px",
             borderRadius: "14px",
             cursor: "pointer",
-            fontWeight: 700,
+            fontWeight: 800,
             fontSize: "13px",
-            color: "#0284C7"
+            boxShadow: "0 4px 14px rgba(220, 38, 38, 0.3)"
           }}
         >
-          <BellRing size={16} /> Probar Alerta Sonora
+          <Volume2 size={18} /> Probar Sirena Industrial (5s)
         </button>
       </div>
 
-      {/* Métricas Financieras */}
+      {/* Tarjetas Métricas */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "32px" }}>
         <div style={{ background: "#FFF", padding: "20px", borderRadius: "20px", border: "1px solid #E0F2FE" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -445,27 +449,27 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* CENTRO DE MENSAJERÍA TIPO MESSENGER */}
+      {/* BANDEJA TIPO MESSENGER INTEGRADA */}
       <div style={{ marginBottom: "16px" }}>
         <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
           <MessageSquare size={22} color="#0284C7" />
           <span>Centro de Mensajería & Atención al Cliente</span>
         </h2>
         <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-          Bandeja de atención en vivo multicanal. Responde a tus clientes en tiempo real.
+          Bandeja de atención en vivo multicanal con alerta sonora instantánea ante consultas de clientes.
         </p>
       </div>
       <AdminSupportChat />
 
-      {/* REGISTRO GENERAL DE PEDIDOS */}
+      {/* REGISTRO DE VENTAS A CLIENTES (SIN PEDIDOS DEL ADMIN) */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", marginBottom: "40px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
           <div>
             <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0 }}>
-              Registro General de Pedidos ({orders.length})
+              Auditoría General de Ventas ({orders.length})
             </h2>
             <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-              Actualiza estados de despacho en tiempo real o elimina registros auditados.
+              Compras emitidas por clientes de la tienda. Actualiza estados de despacho o elimina registros.
             </p>
           </div>
           <button
@@ -492,7 +496,7 @@ export default function AdminDashboard() {
 
         {orders.length === 0 ? (
           <div style={{ textAlign: "center", padding: "40px 20px", color: "#94A3B8" }}>
-            No hay órdenes registradas por el momento.
+            No hay compras registradas por el momento.
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -500,12 +504,12 @@ export default function AdminDashboard() {
               <thead>
                 <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", color: "#475569", textAlign: "left" }}>
                   <th style={{ padding: "14px 16px" }}>ID & Fecha</th>
-                  <th style={{ padding: "14px 16px" }}>Cliente</th>
+                  <th style={{ padding: "14px 16px" }}>Cliente Comprador</th>
                   <th style={{ padding: "14px 16px" }}>Productos</th>
                   <th style={{ padding: "14px 16px", textAlign: "center" }}>Cant.</th>
                   <th style={{ padding: "14px 16px" }}>Total</th>
                   <th style={{ padding: "14px 16px" }}>Operación / Entrega</th>
-                  <th style={{ padding: "14px 16px" }}>Estado de Entrega</th>
+                  <th style={{ padding: "14px 16px" }}>Estado de Despacho</th>
                   <th style={{ padding: "14px 16px", textAlign: "center" }}>Acción</th>
                 </tr>
               </thead>
@@ -618,7 +622,7 @@ export default function AdminDashboard() {
                         <button
                           onClick={() => handleDeleteOrder(o.id)}
                           style={{ background: "#FEE2E2", border: "none", color: "#DC2626", padding: "8px", borderRadius: "10px", cursor: "pointer" }}
-                          title="Eliminar pedido"
+                          title="Eliminar pedido de venta"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -632,7 +636,7 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* ÚNICO MOTOR DE PRODUCTOS EN EL SISTEMA */}
+      {/* ÚNICO MOTOR DE CREACIÓN DE PRODUCTOS */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", marginBottom: "40px" }}>
         <h2 style={{ fontSize: "20px", fontWeight: 900, marginBottom: "18px", display: "flex", alignItems: "center", gap: "10px", color: "#0F172A" }}>
           <PlusCircle size={22} color="#0284C7" /> Publicar Producto en el Catálogo
