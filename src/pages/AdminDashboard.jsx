@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   collection,
   onSnapshot,
@@ -10,7 +10,8 @@ import {
   orderBy
 } from "firebase/firestore";
 import { db } from "../firebase/config";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 import { playNotificationChime, triggerBrowserNotification } from "../utils/notificationSound";
 import AdminSupportChat from "../components/AdminSupportChat";
 import {
@@ -26,14 +27,19 @@ import {
   MapPin,
   MessageSquare,
   User,
-  Volume2
+  Volume2,
+  Calendar,
+  Filter
 } from "lucide-react";
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
+  
+  // Selector de período temporal
+  // Opciones: 'all' | 'today' | 'week' | 'month' | '2months' | 'year'
+  const [timeRange, setTimeRange] = useState("all");
 
-  // Referencia para rastrear la primera carga y disparar la alarma solo ante pedidos nuevos
   const isFirstLoadRef = useRef(true);
   const prevOrdersCountRef = useRef(0);
 
@@ -51,7 +57,7 @@ export default function AdminDashboard() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // 1. Escucha en tiempo real de Órdenes con disparador de Sirena Industrial
+  // 1. Escucha en tiempo real de Órdenes y Productos con alarma sonora ante nuevas compras
   useEffect(() => {
     const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
 
@@ -59,8 +65,8 @@ export default function AdminDashboard() {
       ordersQuery,
       (snap) => {
         const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        
-        // Detección de compra nueva realizada por un cliente
+
+        // Detectar si ingresó una nueva orden de compra emitida por un cliente
         if (!isFirstLoadRef.current && items.length > prevOrdersCountRef.current) {
           const newestOrder = items[0];
           playNotificationChime();
@@ -74,7 +80,7 @@ export default function AdminDashboard() {
         isFirstLoadRef.current = false;
         setOrders(items);
       },
-      (err) => console.error("Error al escuchar órdenes en tiempo real:", err)
+      (err) => console.error("Error al escuchar órdenes:", err)
     );
 
     const unsubProducts = onSnapshot(
@@ -92,6 +98,58 @@ export default function AdminDashboard() {
     };
   }, []);
 
+  // 2. Filtro temporal dinámico para Balance (Día, Semana, Mes, 2 Meses, Año)
+  const filteredOrders = useMemo(() => {
+    if (timeRange === "all") return orders;
+
+    const now = new Date();
+    return orders.filter((o) => {
+      if (!o.createdAt) return false;
+      const orderDate = new Date(o.createdAt);
+      if (isNaN(orderDate.getTime())) return false;
+
+      const diffMs = now.getTime() - orderDate.getTime();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+      switch (timeRange) {
+        case "today": {
+          return (
+            orderDate.getDate() === now.getDate() &&
+            orderDate.getMonth() === now.getMonth() &&
+            orderDate.getFullYear() === now.getFullYear()
+          );
+        }
+        case "week":
+          return diffDays <= 7;
+        case "month":
+          return diffDays <= 30;
+        case "2months":
+          return diffDays <= 60;
+        case "year":
+          return diffDays <= 365;
+        default:
+          return true;
+      }
+    });
+  }, [orders, timeRange]);
+
+  const getTimeRangeLabel = () => {
+    switch (timeRange) {
+      case "today": return "Balance del Día (Hoy)";
+      case "week": return "Últimos 7 Días (Semana)";
+      case "month": return "Últimos 30 Días (Mes)";
+      case "2months": return "Últimos 60 Días (2 Meses)";
+      case "year": return "Último Año (12 Meses)";
+      default: return "Histórico Completo";
+    }
+  };
+
+  // Métricas financieras calculadas según el período activo
+  const totalRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
+  const totalCost = filteredOrders.reduce((sum, o) => sum + (Number(o.estimatedCost) || 0), 0);
+  const netProfit = totalRevenue - totalCost;
+  const totalUnitsSold = filteredOrders.reduce((sum, o) => sum + (Number(o.totalItemsCount) || 0), 0);
+
   const handleStatusChange = async (orderId, newStatus) => {
     try {
       await updateDoc(doc(db, "orders", orderId), { status: newStatus });
@@ -102,11 +160,11 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteOrder = async (orderId) => {
-    if (window.confirm(`¿Confirmas la eliminación permanente del registro de venta #${orderId.slice(0, 8)}?`)) {
+    if (window.confirm(`¿Confirmas la eliminación permanente del registro #${orderId.slice(0, 8)}?`)) {
       try {
         await deleteDoc(doc(db, "orders", orderId));
       } catch (error) {
-        console.error("Error al eliminar pedido:", error);
+        console.error("Error al eliminar orden:", error);
         alert("No se pudo eliminar la orden: " + error.message);
       }
     }
@@ -173,7 +231,7 @@ export default function AdminDashboard() {
       alert("¡Producto publicado en el catálogo exitosamente!");
     } catch (err) {
       console.error(err);
-      alert("Error al guardar en base de datos: " + err.message);
+      alert("Error al guardar: " + err.message);
     } finally {
       setIsUploading(false);
     }
@@ -185,16 +243,10 @@ export default function AdminDashboard() {
     }
   };
 
-  // Métricas financieras calculadas
-  const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
-  const totalCost = orders.reduce((sum, o) => sum + (Number(o.estimatedCost) || 0), 0);
-  const netProfit = totalRevenue - totalCost;
-  const totalUnitsSold = orders.reduce((sum, o) => sum + (Number(o.totalItemsCount) || 0), 0);
-
-  // EXPORTACIÓN A EXCEL FORMATEADA CON SHEETJS
-  const exportAccountingToExcel = () => {
-    if (orders.length === 0) {
-      alert("No hay registros de ventas para exportar.");
+  // EXPORTACIÓN A EXCEL CORPORATIVA CON EXCELJS
+  const exportAccountingToExcel = async () => {
+    if (filteredOrders.length === 0) {
+      alert("No hay registros en el período seleccionado para exportar.");
       return;
     }
 
@@ -202,53 +254,128 @@ export default function AdminDashboard() {
     const formattedDate = now.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
     const formattedTime = now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-    const sheetData = [
-      ["DISTRIBUIDORA DIEGO - REPORTE GERENCIAL DE VENTAS Y DESPACHO"],
-      [`Emisión: ${formattedDate} ${formattedTime} | Administrador: vq2403@diego.org.com | Total Registros: ${orders.length}`],
-      [],
-      [
-        "N° PEDIDO",
-        "FECHA Y HORA",
-        "CLIENTE COMPRADOR",
-        "CORREO ELECTRÓNICO",
-        "MODALIDAD / DISTRITO",
-        "DIRECCIÓN EXACTA",
-        "DETALLE DE PRODUCTOS",
-        "UNID. TOTALES",
-        "INGRESO BRUTO (S/)",
-        "COSTO ESTIMADO (S/)",
-        "UTILIDAD NETA (S/)",
-        "REF. DE PAGO",
-        "ESTADO LOGÍSTICO"
-      ]
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Distribuidora DIEGO";
+    workbook.lastModifiedBy = "vq2403@diego.org.com";
+    workbook.created = now;
+    workbook.modified = now;
+
+    const worksheet = workbook.addWorksheet("Balance General", {
+      views: [{ showGridLines: true }]
+    });
+
+    // 1. Configuración estricta de anchos de columna (A hasta M)
+    worksheet.columns = [
+      { key: "orderId", width: 16 },
+      { key: "date", width: 20 },
+      { key: "client", width: 26 },
+      { key: "email", width: 30 },
+      { key: "modality", width: 24 },
+      { key: "address", width: 32 },
+      { key: "items", width: 42 },
+      { key: "units", width: 12 },
+      { key: "revenue", width: 18 },
+      { key: "cost", width: 18 },
+      { key: "profit", width: 18 },
+      { key: "ref", width: 18 },
+      { key: "status", width: 16 }
     ];
+
+    // 2. Fila 1: Banner Institucional
+    worksheet.mergeCells("A1:M1");
+    const titleRow = worksheet.getRow(1);
+    titleRow.height = 42;
+    const titleCell = worksheet.getCell("A1");
+    titleCell.value = "DISTRIBUIDORA DIEGO — BALANCE FINANCIERO Y CONTROL LOGÍSTICO";
+    titleCell.font = { name: "Calibri", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
+    titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002D62" } };
+    titleCell.alignment = { vertical: "middle", horizontal: "center" };
+
+    // 3. Fila 2: Subtítulo con Período y Auditoría
+    worksheet.mergeCells("A2:M2");
+    const subRow = worksheet.getRow(2);
+    subRow.height = 22;
+    const subCell = worksheet.getCell("A2");
+    subCell.value = `Período: ${getTimeRangeLabel()}  |  Emisión: ${formattedDate} ${formattedTime}  |  Auditor: vq2403@diego.org.com  |  Registros: ${filteredOrders.length}`;
+    subCell.font = { name: "Calibri", size: 10, italic: true, color: { argb: "FF334155" } };
+    subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F4F8" } };
+    subCell.alignment = { vertical: "middle", horizontal: "center" };
+
+    // 4. Fila 3: Fila vacía de separación
+    worksheet.getRow(3).height = 10;
+
+    // 5. Fila 4: Cabecera de Tabla
+    const headers = [
+      "N° PEDIDO",
+      "FECHA Y HORA",
+      "CLIENTE COMPRADOR",
+      "CORREO ELECTRÓNICO",
+      "MODALIDAD / DISTRITO",
+      "DIRECCIÓN DE ENTREGA",
+      "PRODUCTOS DETALLADOS",
+      "UNID.",
+      "TOTAL VENTA (S/)",
+      "COSTO TOTAL (S/)",
+      "UTILIDAD NETA (S/)",
+      "REF. OPERACIÓN",
+      "ESTADO"
+    ];
+
+    const headerRow = worksheet.getRow(4);
+    headerRow.values = headers;
+    headerRow.height = 28;
+
+    headerRow.eachCell((cell) => {
+      cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0A3A60" } };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      cell.border = {
+        top: { style: "medium", color: { argb: "FF002D62" } },
+        bottom: { style: "medium", color: { argb: "FF002D62" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } }
+      };
+    });
+
+    const statusTheme = {
+      Verificado: { bg: "FFEEF2FF", font: "FF4F46E5" },
+      "En proceso": { bg: "FFFEF3C7", font: "FFD97706" },
+      "En camino": { bg: "FFE0F2FE", font: "FF0284C7" },
+      Entregado: { bg: "FFDCFCE7", font: "FF15803D" },
+      Pendiente: { bg: "FFFEE2E2", font: "FFB91C1C" }
+    };
 
     let sumUnits = 0;
     let sumRevenue = 0;
     let sumCost = 0;
     let sumProfit = 0;
 
-    orders.forEach((o) => {
+    // 6. Filas 5+: Datos con diseño Cebra y formato numérico contable
+    filteredOrders.forEach((o, index) => {
+      const rowIndex = 5 + index;
+      const row = worksheet.getRow(rowIndex);
+
       const orderDate = o.createdAt ? new Date(o.createdAt) : null;
       const orderDateStr = orderDate
         ? `${orderDate.toLocaleDateString("es-PE")} ${orderDate.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}`
         : "S/F";
 
       const itemsStr = Array.isArray(o.items) && o.items.length > 0
-        ? o.items.map((i) => `• ${i.name} [x${i.quantity || 1}]`).join("\n")
+        ? o.items.map((i) => `• ${i.name} [x${i.quantity || 1}]`).join("\r\n")
         : "• Orden Estándar";
 
       const units = Number(o.totalItemsCount) || (Array.isArray(o.items) ? o.items.reduce((acc, i) => acc + (i.quantity || 1), 0) : 1);
       const revenue = Number(o.totalAmount || 0);
       const cost = Number(o.estimatedCost || 0);
       const profit = Number(o.netProfit !== undefined ? o.netProfit : (revenue - cost));
+      const statusStr = o.status || "Pendiente";
 
       sumUnits += units;
       sumRevenue += revenue;
       sumCost += cost;
       sumProfit += profit;
 
-      sheetData.push([
+      row.values = [
         `#D-${o.id.slice(0, 8).toUpperCase()}`,
         orderDateStr,
         o.clientName || "Cliente Web",
@@ -257,60 +384,101 @@ export default function AdminDashboard() {
         o.address || "Punto de Recojo",
         itemsStr,
         units,
-        Number(revenue.toFixed(2)),
-        Number(cost.toFixed(2)),
-        Number(profit.toFixed(2)),
+        revenue,
+        cost,
+        profit,
         o.paymentRef || "N/A",
-        o.status || "Pendiente"
-      ]);
+        statusStr
+      ];
+
+      const isEven = index % 2 === 1;
+      const rowBg = isEven ? "FFF8FAFC" : "FFFFFFFF";
+
+      row.eachCell((cell, colNumber) => {
+        cell.font = { name: "Calibri", size: 10, color: { argb: "FF0F172A" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: rowBg } };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCBD5E1" } },
+          bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } }
+        };
+
+        if (colNumber >= 9 && colNumber <= 11) {
+          cell.numFmt = '"S/ "#,##0.00;[Red]-"S/ "#,##0.00;"S/ "0.00';
+          cell.alignment = { vertical: "middle", horizontal: "right" };
+        } else if (colNumber === 8) {
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          cell.numFmt = "#,##0";
+        } else if (colNumber === 1 || colNumber === 2 || colNumber === 12) {
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+        } else if (colNumber === 7) {
+          cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+        } else if (colNumber === 13) {
+          const badge = statusTheme[statusStr] || statusTheme["Pendiente"];
+          cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: badge.font } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: badge.bg } };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+        } else {
+          cell.alignment = { vertical: "middle", horizontal: "left" };
+        }
+      });
     });
 
-    sheetData.push([]);
-    sheetData.push([
+    // 7. Fila Final de Consolidado Financiero (Totales)
+    const summaryRowIndex = 5 + filteredOrders.length;
+    const summaryRow = worksheet.getRow(summaryRowIndex);
+
+    summaryRow.values = [
       "CONSOLIDADO TOTAL",
       "-",
       "-",
       "-",
       "-",
       "-",
-      "TOTALES GENERALES",
+      "TOTALES DEL PERÍODO",
       sumUnits,
-      Number(sumRevenue.toFixed(2)),
-      Number(sumCost.toFixed(2)),
-      Number(sumProfit.toFixed(2)),
+      sumRevenue,
+      sumCost,
+      sumProfit,
       "-",
       "AUDITADO"
-    ]);
-
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
-
-    worksheet["!cols"] = [
-      { wch: 14 },
-      { wch: 19 },
-      { wch: 24 },
-      { wch: 28 },
-      { wch: 22 },
-      { wch: 34 },
-      { wch: 38 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 16 }
     ];
 
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Balance_General");
+    summaryRow.height = 30;
 
+    summaryRow.eachCell((cell, colNumber) => {
+      cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FF0F172A" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FF0F172A" } },
+        bottom: { style: "double", color: { argb: "FF0F172A" } },
+        left: { style: "thin", color: { argb: "FFCBD5E1" } },
+        right: { style: "thin", color: { argb: "FFCBD5E1" } }
+      };
+
+      if (colNumber >= 9 && colNumber <= 11) {
+        cell.numFmt = '"S/ "#,##0.00;[Red]-"S/ "#,##0.00;"S/ "0.00';
+        cell.alignment = { vertical: "middle", horizontal: "right" };
+        cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FF0284C7" } };
+      } else if (colNumber === 8) {
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.numFmt = "#,##0";
+      } else {
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+      }
+    });
+
+    // 8. Generación del Blob y Descarga Automática
+    const buffer = await workbook.xlsx.writeBuffer();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
     const hours = String(now.getHours()).padStart(2, "0");
     const minutes = String(now.getMinutes()).padStart(2, "0");
 
-    const fileName = `Reporte_Contable_DIEGO_${year}-${month}-${day}_${hours}${minutes}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    const fileName = `Reporte_Contable_DIEGO_${timeRange}_${year}-${month}-${day}_${hours}${minutes}.xlsx`;
+    saveAs(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fileName);
   };
 
   const getStatusStyle = (status) => {
@@ -406,13 +574,54 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* Tarjetas Métricas */}
+      {/* BARRA DE FILTRO TEMPORAL PARA EL BALANCE */}
+      <div style={{ background: "#FFF", padding: "16px 20px", borderRadius: "18px", border: "1px solid #E2E8F0", marginBottom: "24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", boxShadow: "0 2px 6px rgba(0,0,0,0.02)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#0F172A", fontWeight: 800, fontSize: "14px" }}>
+          <Calendar size={18} color="#0284C7" />
+          <span>Período del Balance:</span>
+          <span style={{ color: "#0284C7" }}>{getTimeRangeLabel()}</span>
+        </div>
+
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {[
+            { id: "today", label: "Hoy" },
+            { id: "week", label: "7 Días" },
+            { id: "month", label: "1 Mes" },
+            { id: "2months", label: "2 Meses" },
+            { id: "year", label: "1 Año" },
+            { id: "all", label: "Histórico Total" }
+          ].map((tab) => {
+            const isActive = timeRange === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setTimeRange(tab.id)}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: "10px",
+                  border: isActive ? "1.5px solid #0284C7" : "1px solid #E2E8F0",
+                  background: isActive ? "#0284C7" : "#F8FAFC",
+                  color: isActive ? "#FFF" : "#475569",
+                  fontWeight: 800,
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease"
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Tarjetas Métricas Dinámicas */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "32px" }}>
         <div style={{ background: "#FFF", padding: "20px", borderRadius: "20px", border: "1px solid #E0F2FE" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{ padding: "12px", background: "#E0F2FE", borderRadius: "14px", color: "#0284C7" }}><DollarSign size={24} /></div>
             <div>
-              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>INGRESOS TOTALES</div>
+              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>INGRESOS ({timeRange.toUpperCase()})</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>S/ {totalRevenue.toFixed(2)}</div>
             </div>
           </div>
@@ -442,7 +651,7 @@ export default function AdminDashboard() {
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{ padding: "12px", background: "#FEF3C7", borderRadius: "14px", color: "#D97706" }}><PackageCheck size={24} /></div>
             <div>
-              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>UNIDADES TOTALES</div>
+              <div style={{ fontSize: "11px", color: "#94A3B8", fontWeight: 800 }}>UNIDADES VENDIDAS</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#0F172A" }}>{totalUnitsSold}</div>
             </div>
           </div>
@@ -456,20 +665,20 @@ export default function AdminDashboard() {
           <span>Centro de Mensajería & Atención al Cliente</span>
         </h2>
         <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-          Bandeja de atención en vivo multicanal con alerta sonora instantánea ante consultas de clientes.
+          Bandeja multicanal con alerta sonora industrial instantánea ante consultas de clientes.
         </p>
       </div>
       <AdminSupportChat />
 
-      {/* REGISTRO DE VENTAS A CLIENTES (SIN PEDIDOS DEL ADMIN) */}
+      {/* REGISTRO DE VENTAS A CLIENTES (FILTRADO POR PERÍODO) */}
       <div style={{ background: "#FFF", padding: "28px", borderRadius: "24px", border: "1px solid #E2E8F0", boxShadow: "0 4px 20px rgba(0,0,0,0.03)", marginBottom: "40px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
           <div>
             <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0 }}>
-              Auditoría General de Ventas ({orders.length})
+              Auditoría General de Ventas ({filteredOrders.length})
             </h2>
             <p style={{ fontSize: "13px", color: "#64748B", marginTop: "4px" }}>
-              Compras emitidas por clientes de la tienda. Actualiza estados de despacho o elimina registros.
+              Mostrando registros de: <strong>{getTimeRangeLabel()}</strong>
             </p>
           </div>
           <button
@@ -490,13 +699,13 @@ export default function AdminDashboard() {
             }}
           >
             <FileSpreadsheet size={18} />
-            <span>Exportar Balance a Excel (.xlsx)</span>
+            <span>Exportar {getTimeRangeLabel()} (.xlsx)</span>
           </button>
         </div>
 
-        {orders.length === 0 ? (
+        {filteredOrders.length === 0 ? (
           <div style={{ textAlign: "center", padding: "40px 20px", color: "#94A3B8" }}>
-            No hay compras registradas por el momento.
+            No hay compras registradas en este período temporal.
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -514,7 +723,7 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => {
+                {filteredOrders.map((o) => {
                   const badge = getStatusStyle(o.status || "Pendiente");
                   const itemsList = Array.isArray(o.items) && o.items.length > 0 ? o.items : [];
 
