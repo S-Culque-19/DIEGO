@@ -34,8 +34,6 @@ import {
 export default function AdminDashboard() {
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
-
-  // 15 Rangos temporales estandarizados
   const [timeRange, setTimeRange] = useState("all");
 
   const isFirstLoadRef = useRef(true);
@@ -54,7 +52,6 @@ export default function AdminDashboard() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Listener de Firebase en tiempo real
   useEffect(() => {
     const ordersQuery = query(collection(db, "orders"), orderBy("createdAt", "desc"));
 
@@ -94,7 +91,6 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  // Filtro temporal dinámico con las 15 opciones
   const filteredOrders = useMemo(() => {
     if (timeRange === "all") return orders;
 
@@ -152,7 +148,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Métricas financieras reactivas
   const totalRevenue = filteredOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
   const totalCost = filteredOrders.reduce((sum, o) => sum + (Number(o.estimatedCost) || 0), 0);
   const netProfit = totalRevenue - totalCost;
@@ -251,7 +246,7 @@ export default function AdminDashboard() {
     }
   };
 
-  // EXPORTADOR EXCELJS CORPORATIVO (IMPECABLE)
+  // MOTOR EXCELJS DE ALTO NIVEL CORPORATIVO
   const exportAccountingToExcel = async () => {
     if (filteredOrders.length === 0) {
       alert("No existen registros en el período seleccionado para exportar.");
@@ -272,7 +267,6 @@ export default function AdminDashboard() {
       views: [{ showGridLines: true }]
     });
 
-    // 11 Columnas exactas profesionales
     worksheet.columns = [
       { key: "orderId", width: 15 },
       { key: "date", width: 18 },
@@ -287,7 +281,7 @@ export default function AdminDashboard() {
       { key: "status", width: 14 }
     ];
 
-    // Fila 1: Banner Institucional
+    // Fila 1: Banner Azul Petróleo Profundo
     worksheet.mergeCells("A1:K1");
     const titleRow = worksheet.getRow(1);
     titleRow.height = 40;
@@ -414,7 +408,7 @@ export default function AdminDashboard() {
       });
     });
 
-    // Fila Final de Totales (Consolidado Bancario)
+    // Fila Final de Totales
     const summaryRowIndex = 5 + filteredOrders.length;
     const summaryRow = worksheet.getRow(summaryRowIndex);
     summaryRow.height = 32;
