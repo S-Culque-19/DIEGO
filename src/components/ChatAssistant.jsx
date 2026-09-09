@@ -1,8 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
-import { collection, onSnapshot, addDoc, doc, setDoc } from "firebase/firestore";
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  doc,
+  setDoc,
+  deleteDoc,
+  getDocs
+} from "firebase/firestore";
 import { db } from "../firebase/config";
 import { useAuth } from "../context/AuthContext";
-import { MessageSquare, X, Send, Bot } from "lucide-react";
+import { MessageSquare, X, Send, Bot, Trash2 } from "lucide-react";
 
 export default function ChatAssistant() {
   const { currentUser, isAdmin } = useAuth();
@@ -11,7 +19,7 @@ export default function ChatAssistant() {
   const [inputText, setInputText] = useState("");
   const messagesEndRef = useRef(null);
 
-  // Hook 1: Escucha en tiempo real del canal privado del cliente
+  // Hook 1: Escucha en tiempo real del canal del cliente
   useEffect(() => {
     if (!isOpen || !currentUser || isAdmin) return;
 
@@ -23,7 +31,7 @@ export default function ChatAssistant() {
         msgs.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
         setMessages(msgs);
       },
-      (err) => console.error("Error al escuchar mensajes:", err)
+      (err) => console.error("Error al escuchar chat cliente:", err)
     );
 
     return () => unsub();
@@ -36,8 +44,27 @@ export default function ChatAssistant() {
     }
   }, [messages, isOpen, currentUser, isAdmin]);
 
-  // Regla React: Retorno condicional después de todos los Hooks
+  // Regla React: Retorno condicional después de los Hooks
   if (!currentUser || isAdmin) return null;
+
+  // Acción: Vaciar historial completo por el cliente
+  const handleClearMyChat = async () => {
+    if (!window.confirm("¿Estás seguro de vaciar todo tu historial de conversación?")) return;
+
+    try {
+      const messagesRef = collection(db, `chats/${currentUser.uid}/messages`);
+      const snap = await getDocs(messagesRef);
+      
+      const deletePromises = snap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(deletePromises);
+
+      await deleteDoc(doc(db, "chats", currentUser.uid));
+      setMessages([]);
+    } catch (err) {
+      console.error("Error al vaciar chat:", err);
+      alert("No se pudo vaciar el chat: " + err.message);
+    }
+  };
 
   const sendMessage = async (textToSend, sender = "user") => {
     const text = (textToSend || inputText).trim();
@@ -48,14 +75,12 @@ export default function ChatAssistant() {
     const chatPath = `chats/${currentUser.uid}/messages`;
 
     try {
-      // 1. Guardar mensaje en subcolección privada
       await addDoc(collection(db, chatPath), {
         sender,
         text,
         createdAt: new Date().toISOString()
       });
 
-      // 2. Notificar al panel del Administrador
       await setDoc(
         doc(db, "chats", currentUser.uid),
         {
@@ -69,18 +94,17 @@ export default function ChatAssistant() {
         { merge: true }
       );
 
-      // Auto-respuesta asistencial
       if (sender === "user") {
         setTimeout(async () => {
-          let reply = "Gracias por escribir a Distribuidora DIEGO. Un asesor responderá tu consulta a la brevedad.";
+          let reply = "Gracias por escribir a Distribuidora DIEGO. Un asesor revisará tu mensaje a la brevedad.";
           const lower = text.toLowerCase();
 
           if (lower.includes("delivery") || lower.includes("envio") || lower.includes("distrito")) {
-            reply = "Contamos con Delivery 100% Gratuito en Lima Norte: Comas, Independencia, SMP y Los Olivos. También recojo en MegaPlaza.";
+            reply = "Contamos con Delivery 100% Gratuito en Lima Norte: Comas, Independencia, SMP y Los Olivos. También recojo sin costo en MegaPlaza.";
           } else if (lower.includes("precio") || lower.includes("catalogo") || lower.includes("costo")) {
-            reply = "Puedes consultar nuestros precios mayoristas directamente en el catálogo web. Planchas termoselladas de alta absorción.";
+            reply = "Puedes consultar nuestros precios mayoristas directamente en el catálogo de la web. Planchas termoselladas de alta absorción.";
           } else if (lower.includes("pago") || lower.includes("yape") || lower.includes("plin")) {
-            reply = "Aceptamos Yape y Plin oficial al 926 689 484 a nombre de Distribuidora DIEGO.";
+            reply = "Aceptamos Yape y Plin oficial al número 926 689 484.";
           }
 
           await addDoc(collection(db, chatPath), {
@@ -139,10 +163,11 @@ export default function ChatAssistant() {
           zIndex: 9990,
           border: "1px solid #E2E8F0"
         }}>
+          {/* Cabecera con Botón de Vaciar y Cerrar */}
           <div style={{
             background: "linear-gradient(135deg, #0284C7 0%, #0369A1 100%)",
             color: "#FFF",
-            padding: "16px 20px",
+            padding: "14px 18px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between"
@@ -156,11 +181,24 @@ export default function ChatAssistant() {
                 <span style={{ fontSize: "11px", opacity: 0.85 }}>En línea | Hola, {currentUser.displayName || "Cliente"}</span>
               </div>
             </div>
-            <button onClick={() => setIsOpen(false)} style={{ background: "none", border: "none", color: "#FFF", cursor: "pointer" }}>
-              <X size={18} />
-            </button>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {messages.length > 0 && (
+                <button
+                  onClick={handleClearMyChat}
+                  style={{ background: "rgba(239, 68, 68, 0.25)", border: "none", color: "#FFF", cursor: "pointer", padding: "6px", borderRadius: "8px" }}
+                  title="Vaciar mi conversación"
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+              <button onClick={() => setIsOpen(false)} style={{ background: "none", border: "none", color: "#FFF", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
+          {/* Historial de Mensajes */}
           <div style={{ flex: 1, padding: "16px", overflowY: "auto", background: "#F8FAFC", display: "flex", flexDirection: "column", gap: "10px" }}>
             <div style={{ background: "#E0F2FE", color: "#0369A1", padding: "10px 14px", borderRadius: "14px", fontSize: "12px", lineHeight: 1.4 }}>
               ¡Hola! Soy el asistente virtual de <strong>Distribuidora DIEGO</strong>. ¿Tienes dudas con distritos, compras o pagos?
@@ -193,6 +231,7 @@ export default function ChatAssistant() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Atajos Rápidos */}
           <div style={{ display: "flex", gap: "6px", padding: "6px 12px", background: "#FFF", borderTop: "1px solid #F1F5F9", overflowX: "auto" }}>
             <button
               onClick={() => sendMessage("¿Cuáles son los distritos de envío gratis?")}
@@ -208,6 +247,7 @@ export default function ChatAssistant() {
             </button>
           </div>
 
+          {/* Formulario Input */}
           <form
             onSubmit={(e) => {
               e.preventDefault();

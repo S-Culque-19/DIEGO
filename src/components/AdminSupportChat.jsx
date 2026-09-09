@@ -4,11 +4,13 @@ import {
   onSnapshot,
   addDoc,
   doc,
-  updateDoc
+  updateDoc,
+  deleteDoc,
+  getDocs
 } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { playNotificationChime, triggerBrowserNotification } from "../utils/notificationSound";
-import { MessageSquare, Send, User, ShieldCheck } from "lucide-react";
+import { MessageSquare, Send, User, ShieldCheck, Trash2 } from "lucide-react";
 
 export default function AdminSupportChat() {
   const [conversations, setConversations] = useState([]);
@@ -16,11 +18,9 @@ export default function AdminSupportChat() {
   const [messages, setMessages] = useState([]);
   const [replyText, setReplyText] = useState("");
   const chatScrollRef = useRef(null);
-  
-  // Rastreo de cantidad previa de no leídos para evitar campana infinita
   const prevUnreadCountRef = useRef(0);
 
-  // 1. Escuchar la lista de chats en tiempo real ordenada por última interacción
+  // 1. Escuchar lista de chats en tiempo real ordenada por última interacción
   useEffect(() => {
     const unsubChats = onSnapshot(
       collection(db, "chats"),
@@ -29,7 +29,6 @@ export default function AdminSupportChat() {
         convList.sort((a, b) => new Date(b.lastUpdated || 0) - new Date(a.lastUpdated || 0));
         setConversations(convList);
 
-        // Mantener la conversación seleccionada activa tras actualizaciones
         setSelectedUser((prev) => {
           if (!prev) return convList.length > 0 ? convList[0] : null;
           const found = convList.find((c) => c.id === prev.id);
@@ -42,11 +41,10 @@ export default function AdminSupportChat() {
     return () => unsubChats();
   }, []);
 
-  // 2. Alerta sonora y notificación automática al entrar un mensaje nuevo
+  // 2. Alerta sonora controlada al entrar mensaje nuevo
   useEffect(() => {
     const currentUnreadCount = conversations.filter((c) => c.unreadByAdmin === true).length;
 
-    // Dispara sonido solo si la cantidad de no leídos aumentó
     if (currentUnreadCount > prevUnreadCountRef.current) {
       playNotificationChime();
       triggerBrowserNotification(
@@ -75,7 +73,6 @@ export default function AdminSupportChat() {
       (err) => console.error("Error al cargar mensajes del cliente:", err)
     );
 
-    // Marcar automáticamente como leído al abrir la conversación
     if (selectedUser.unreadByAdmin) {
       updateDoc(doc(db, "chats", selectedUser.id), { unreadByAdmin: false }).catch(() => {});
     }
@@ -83,10 +80,35 @@ export default function AdminSupportChat() {
     return () => unsubMessages();
   }, [selectedUser?.id]);
 
-  // Auto-scroll al último mensaje recibido o enviado
   useEffect(() => {
     chatScrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Acción: Eliminar conversación completa en cascada
+  const handleDeleteChat = async (userIdToDelete, e) => {
+    if (e) e.stopPropagation();
+
+    if (!window.confirm("¿Seguro que deseas eliminar esta conversación y todo su historial de forma permanente?")) {
+      return;
+    }
+
+    try {
+      const messagesRef = collection(db, `chats/${userIdToDelete}/messages`);
+      const snap = await getDocs(messagesRef);
+      const deletePromises = snap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(deletePromises);
+
+      await deleteDoc(doc(db, "chats", userIdToDelete));
+
+      if (selectedUser?.id === userIdToDelete) {
+        setSelectedUser(null);
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error("Error al eliminar conversación:", err);
+      alert("No se pudo eliminar el chat: " + err.message);
+    }
+  };
 
   // Responder al cliente seleccionado
   const handleSendAdminReply = async (e) => {
@@ -153,23 +175,36 @@ export default function AdminSupportChat() {
                     borderBottom: "1px solid #F1F5F9",
                     cursor: "pointer",
                     backgroundColor: isSelected ? "#E0F2FE" : "#FFF",
-                    transition: "background-color 0.15s ease"
+                    transition: "background-color 0.15s ease",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: 800, fontSize: "13px", color: isSelected ? "#0369A1" : "#0F172A" }}>
-                      {c.userName || "Cliente"}
-                    </span>
-                    {c.unreadByAdmin && (
-                      <span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "#EF4444" }} title="Mensaje sin leer" />
-                    )}
+                  <div style={{ flex: 1, minWidth: 0, paddingRight: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontWeight: 800, fontSize: "13px", color: isSelected ? "#0369A1" : "#0F172A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {c.userName || "Cliente"}
+                      </span>
+                      {c.unreadByAdmin && (
+                        <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#EF4444", flexShrink: 0 }} />
+                      )}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
+                      {c.userEmail}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#475569", marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.lastMessage || "Sin mensajes"}
+                    </div>
                   </div>
-                  <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
-                    {c.userEmail}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#475569", marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {c.lastMessage || "Sin mensajes"}
-                  </div>
+
+                  <button
+                    onClick={(e) => handleDeleteChat(c.id, e)}
+                    style={{ background: "#FEE2E2", border: "none", color: "#DC2626", padding: "6px", borderRadius: "8px", cursor: "pointer" }}
+                    title="Eliminar conversación"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               );
             })
@@ -191,9 +226,18 @@ export default function AdminSupportChat() {
                   <span style={{ fontSize: "12px", color: "#64748B" }}>{selectedUser.userEmail}</span>
                 </div>
               </div>
-              <span style={{ fontSize: "11px", background: "#DCFCE7", color: "#16A34A", padding: "4px 10px", borderRadius: "8px", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
-                <ShieldCheck size={14} /> Canal Conectado
-              </span>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "11px", background: "#DCFCE7", color: "#16A34A", padding: "4px 10px", borderRadius: "8px", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
+                  <ShieldCheck size={14} /> Conectado
+                </span>
+                <button
+                  onClick={() => handleDeleteChat(selectedUser.id)}
+                  style={{ background: "#FEE2E2", border: "none", color: "#DC2626", padding: "7px 12px", borderRadius: "10px", fontWeight: 800, fontSize: "12px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  <Trash2 size={14} /> Borrar Chat
+                </button>
+              </div>
             </div>
 
             <div style={{ flex: 1, padding: "20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px", background: "#FAFAFA" }}>
@@ -262,7 +306,7 @@ export default function AdminSupportChat() {
           </>
         ) : (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8", fontSize: "14px" }}>
-            Selecciona una conversación para interactuar con el cliente.
+            Selecciona una conversación para interactuar.
           </div>
         )}
       </div>

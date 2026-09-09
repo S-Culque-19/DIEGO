@@ -168,34 +168,146 @@ export default function AdminDashboard() {
     }
   };
 
+  // Métricas financieras calculadas
   const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
   const totalCost = orders.reduce((sum, o) => sum + (Number(o.estimatedCost) || 0), 0);
   const netProfit = totalRevenue - totalCost;
   const totalUnitsSold = orders.reduce((sum, o) => sum + (Number(o.totalItemsCount) || 0), 0);
 
+  // EXPORTACIÓN A EXCEL EJECUTIVA Y FORMATEADA
   const exportAccountingToExcel = () => {
-    const dataForExcel = orders.map((o) => ({
-      "ID Pedido": o.id,
-      "Fecha": o.createdAt ? new Date(o.createdAt).toLocaleString() : "S/F",
-      "Cliente": o.clientName || "Sin registrar",
-      "Correo": o.clientEmail || "Anónimo",
-      "Modalidad / Distrito": o.district || "No especificado",
-      "Dirección": o.address || "Punto de Recojo",
-      "Unidades Totales": o.totalItemsCount || 0,
-      "Productos": Array.isArray(o.items)
-        ? o.items.map((i) => `${i.name} (x${i.quantity})`).join(" | ")
-        : "Sin detalle",
-      "Total Venta (S/)": Number(o.totalAmount || 0).toFixed(2),
-      "Costo Estimado (S/)": Number(o.estimatedCost || 0).toFixed(2),
-      "Ganancia Neta (S/)": Number(o.netProfit || 0).toFixed(2),
-      "Ref. Pago": o.paymentRef || "N/A",
-      "Estado": o.status || "Pendiente"
-    }));
+    if (orders.length === 0) {
+      alert("No existen órdenes registradas para exportar.");
+      return;
+    }
 
-    const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString("es-PE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    });
+    const formattedTime = now.toLocaleTimeString("es-PE", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+
+    // 1. Matriz de Datos con Encabezados y Metadatos
+    const sheetData = [
+      ["DISTRIBUIDORA DIEGO - REPORTE GERENCIAL DE VENTAS Y DESPACHO"],
+      [`Emisión: ${formattedDate} ${formattedTime} | Auditor: vq2403@diego.org.com | Total Registros: ${orders.length}`],
+      [], // Fila en blanco
+      [
+        "N° PEDIDO",
+        "FECHA Y HORA",
+        "CLIENTE",
+        "CORREO ELECTRÓNICO",
+        "MODALIDAD / DISTRITO",
+        "DIRECCIÓN EXACTA",
+        "DETALLE DE PRODUCTOS",
+        "UNID. TOTALES",
+        "INGRESO BRUTO (S/)",
+        "COSTO ESTIMADO (S/)",
+        "UTILIDAD NETA (S/)",
+        "REF. DE PAGO",
+        "ESTADO LOGÍSTICO"
+      ]
+    ];
+
+    let sumUnits = 0;
+    let sumRevenue = 0;
+    let sumCost = 0;
+    let sumProfit = 0;
+
+    // 2. Mapeo de Registros
+    orders.forEach((o) => {
+      const orderDate = o.createdAt ? new Date(o.createdAt) : null;
+      const orderDateStr = orderDate
+        ? `${orderDate.toLocaleDateString("es-PE")} ${orderDate.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}`
+        : "S/F";
+
+      const itemsStr = Array.isArray(o.items) && o.items.length > 0
+        ? o.items.map((i) => `• ${i.name} [x${i.quantity || 1}]`).join("\n")
+        : "• Orden Estándar";
+
+      const units = Number(o.totalItemsCount) || (Array.isArray(o.items) ? o.items.reduce((acc, i) => acc + (i.quantity || 1), 0) : 1);
+      const revenue = Number(o.totalAmount || 0);
+      const cost = Number(o.estimatedCost || 0);
+      const profit = Number(o.netProfit !== undefined ? o.netProfit : (revenue - cost));
+
+      sumUnits += units;
+      sumRevenue += revenue;
+      sumCost += cost;
+      sumProfit += profit;
+
+      sheetData.push([
+        `#D-${o.id.slice(0, 8).toUpperCase()}`,
+        orderDateStr,
+        o.clientName || "Cliente Web",
+        (o.clientEmail || "anonimo@diego.com").toLowerCase(),
+        o.district || "Punto de Entrega",
+        o.address || "Punto de Recojo Oficial",
+        itemsStr,
+        units,
+        Number(revenue.toFixed(2)),
+        Number(cost.toFixed(2)),
+        Number(profit.toFixed(2)),
+        o.paymentRef || "N/A",
+        o.status || "Pendiente"
+      ]);
+    });
+
+    // 3. Fila de Consolidado Financiero (Totales)
+    sheetData.push([]);
+    sheetData.push([
+      "CONSOLIDADO TOTAL",
+      "-",
+      "-",
+      "-",
+      "-",
+      "-",
+      "TOTALES GENERALES",
+      sumUnits,
+      Number(sumRevenue.toFixed(2)),
+      Number(sumCost.toFixed(2)),
+      Number(sumProfit.toFixed(2)),
+      "-",
+      "AUDITADO"
+    ]);
+
+    // 4. Creación de Workbook y Hoja
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Ventas_Logistica");
-    XLSX.writeFile(workbook, `Reporte_DIEGO_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+    // 5. Configuración de Anchos de Columna Óptimos (!cols)
+    worksheet["!cols"] = [
+      { wch: 14 }, // N° PEDIDO
+      { wch: 19 }, // FECHA Y HORA
+      { wch: 24 }, // CLIENTE
+      { wch: 28 }, // CORREO
+      { wch: 22 }, // DISTRITO
+      { wch: 34 }, // DIRECCIÓN
+      { wch: 38 }, // DETALLE PRODUCTOS
+      { wch: 14 }, // UNIDADES
+      { wch: 18 }, // INGRESO BRUTO
+      { wch: 18 }, // COSTO ESTIMADO
+      { wch: 18 }, // UTILIDAD NETA
+      { wch: 18 }, // REF PAGO
+      { wch: 16 }  // ESTADO
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Balance_General");
+
+    // 6. Descarga con Nomenclatura Automática
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+
+    const fileName = `Reporte_Contable_DIEGO_${year}-${month}-${day}_${hours}${minutes}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
   };
 
   const getStatusStyle = (status) => {
@@ -333,7 +445,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* CENTRO DE MENSAJERÍA TIPO MESSENGER (SIN DUPLICADOS) */}
+      {/* CENTRO DE MENSAJERÍA TIPO MESSENGER */}
       <div style={{ marginBottom: "16px" }}>
         <h2 style={{ fontSize: "20px", fontWeight: 900, color: "#0F172A", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
           <MessageSquare size={22} color="#0284C7" />
@@ -369,11 +481,12 @@ export default function AdminDashboard() {
               borderRadius: "14px",
               cursor: "pointer",
               fontWeight: 800,
-              fontSize: "13px"
+              fontSize: "13px",
+              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.2)"
             }}
           >
             <FileSpreadsheet size={18} />
-            <span>Exportar a Excel (.xlsx)</span>
+            <span>Exportar Balance a Excel (.xlsx)</span>
           </button>
         </div>
 
